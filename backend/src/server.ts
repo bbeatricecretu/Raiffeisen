@@ -1,10 +1,11 @@
-// backend/src/server.ts
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import OpenAI from "openai";
 
-dotenv.config({ path: "./.env" }); // important: ca sa citeasca backend/.env
+import { runJsonTask } from "./ai/services/aiService";
+import { TASKS } from "./ai/taskRegistry";
+
+dotenv.config({ path: "./.env" });
 
 const app = express();
 app.use(cors());
@@ -12,53 +13,55 @@ app.use(express.json());
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
-// Health check
+// Health
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Validate API key early (but do NOT log the key itself)
-const apiKey = process.env.OPENAI_API_KEY;
-if (!apiKey) {
-  console.error(
-    "Missing OPENAI_API_KEY. Add it to backend/.env as OPENAI_API_KEY=sk-..."
-  );
-}
-
-// Create OpenAI client (only if key exists)
-const openai = apiKey ? new OpenAI({ apiKey }) : null;
-
-// Test AI endpoint
+// Basic AI connectivity test (doesn't require schema)
 app.get("/test-ai", async (req, res) => {
   try {
-    if (!openai) {
-      return res.status(500).json({
-        error:
-          "OPENAI_API_KEY is missing. Add it to backend/.env and restart the server.",
-      });
+    const out = await runJsonTask(
+      TASKS.nl_to_query,
+      {
+        query_ro: "arată-mi plățile la benzinării din Cluj săptămâna trecută",
+        today: new Date().toISOString().slice(0, 10)
+      },
+      { allowFallback: true }
+    );
+
+    res.json({ ok: true, sampleParsedQuery: out.data, meta: out.meta });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+/**
+ * REAL endpoint: NL -> JSON query (validated, retry, fallback)
+ * Body: { query: string, today?: "YYYY-MM-DD" }
+ */
+app.post("/search/parse", async (req, res) => {
+  try {
+    const query = String(req.body?.query ?? "").trim();
+    if (!query) {
+      return res.status(400).json({ error: "Missing 'query' in body." });
     }
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        { role: "system", content: "Raspunde concis si in limba romana." },
-        { role: "user", content: "Spune salut in romana." },
-      ],
-    });
+    const today = String(req.body?.today ?? new Date().toISOString().slice(0, 10));
 
-    const result = response.choices[0]?.message?.content ?? "";
-    res.json({ result });
+    const out = await runJsonTask(
+      TASKS.nl_to_query,
+      { query_ro: query, today },
+      { allowFallback: true }
+    );
+
+    res.json(out);
   } catch (err: any) {
-    console.error("test-ai error:", err?.message || err);
-    res.status(500).json({
-      error: "AI call failed",
-      details: err?.message || String(err),
-    });
+    res.status(500).json({ error: err?.message || String(err) });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`Health: http://localhost:${PORT}/health`);
 });

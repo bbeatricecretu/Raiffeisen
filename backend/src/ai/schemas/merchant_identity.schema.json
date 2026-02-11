@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "canonical_merchant": { "type": "string", "minLength": 1 },
+    "clean_display_name": { "type": "string", "minLength": 1 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "service_type": { "type": "string", "minLength": 1 },
+    "pos_explanation": { "type": "string", "minLength": 1 }
+  },
+  "required": ["canonical_merchant", "clean_display_name", "confidence", "service_type", "pos_explanation"]
+}

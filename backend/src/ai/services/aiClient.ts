@@ -1,15 +1,23 @@
+import dotenv from "dotenv";
+dotenv.config({ path: "./.env" });
+
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) {
+  throw new Error("Missing credentials. Set OPENAI_API_KEY in backend/.env");
+}
 
-export async function callModel(messages: any[]) {
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini", 
-    messages,
-    temperature: 0
+const openai = new OpenAI({ apiKey });
+
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
+export async function callModel(messages: ChatMessage[]) {
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    messages
   });
 
-  return response.choices[0].message.content;
+  return resp.choices[0]?.message?.content ?? "";
 }
