@@ -1,0 +1,28 @@
+# Smart Mobile AI - Python Dependencies
+
+# Core AI/ML Libraries
+openai>=1.12.0              # OpenAI API client
+anthropic>=0.18.0           # Anthropic Claude API (optional)
+
+# Data Validation & Models
+pydantic>=2.6.0             # Data validation using Python type hints
+pydantic-settings>=2.1.0    # Settings management with Pydantic
+
+# Retry & Error Handling
+tenacity>=8.2.3             # Retry logic with exponential backoff
+
+# Environment & Configuration
+python-dotenv>=1.0.0        # Load environment variables from .env
+
+# Testing
+pytest>=8.0.0               # Testing framework
+pytest-asyncio>=0.23.0      # Async testing support
+pytest-cov>=4.1.0           # Code coverage
+
+# Logging & Monitoring (optional)
+structlog>=24.1.0           # Structured logging (optional)
+
+# Development Tools (optional)
+black>=24.1.0               # Code formatting
+flake8>=7.0.0               # Linting
+mypy>=1.8.0                 # Type checking
