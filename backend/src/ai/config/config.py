@@ -54,7 +54,7 @@ class AIConfig(BaseSettings):
     # ===================================================================
     # Performance & Reliability
     # ===================================================================
-    request_timeout: float = Field(
+    timeout_seconds: float = Field(
         default=5.0,
         ge=1.0,
         le=30.0,
