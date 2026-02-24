@@ -1,6 +1,5 @@
-# ai_service.py
 """
-AI Service - Main Integration Layer
+AI Service - Main Integration Layer with Romanian Language Support
 This is the single entry point for all AI functionality
 Backend engineer calls this, not individual AI components
 """
@@ -9,6 +8,7 @@ import os
 from dotenv import load_dotenv
 
 from src.ai.features.answer_formatter import AnswerFormatter, ParsedQuery, Transaction
+from src.ai.features.language_detector import Language
 from src.ai.features.merchant_normalizer import MerchantNormalizer
 from src.ai.features.merchant_summarizer import MerchantSummarizer, TransactionStats
 from src.ai.features.query_types import QueryParser
@@ -16,7 +16,7 @@ from src.ai.features.safety_filter import SafetyFilter, RefusalReason
 
 load_dotenv()
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 from openai import OpenAI
 from pydantic import BaseModel
 import logging
@@ -44,6 +44,7 @@ class AIServiceConfig(BaseModel):
 class AIService:
     """
     Main AI Service - Single entry point for all AI functionality
+    Now supports Romanian and English languages automatically!
 
     This class orchestrates all AI components and provides clean APIs
     for the backend engineer to use.
@@ -81,7 +82,7 @@ class AIService:
         self.safety = SafetyFilter(self.client)
         self.formatter = AnswerFormatter(self.client)
 
-        logger.info("AI Service initialized successfully")
+        logger.info("AI Service initialized successfully with Romanian language support")
 
     # ===================================================================
     # PUBLIC API ENDPOINTS - Backend calls these
@@ -131,11 +132,13 @@ class AIService:
 
     def generate_merchant_summary(self,
                                   merchant_name: str,
-                                  transaction_stats: Dict[str, Any]) -> Dict[str, Any]:
+                                  transaction_stats: Dict[str, Any],
+                                  language: Language = "en") -> Dict[str, Any]:
         """
         API Endpoint: POST /api/ai/merchant-summary
 
         Generate a 220-character summary for merchant profile page
+        NOW WITH LANGUAGE SUPPORT! 🇷🇴
 
         Args:
             merchant_name: Normalized merchant name
@@ -146,39 +149,57 @@ class AIService:
                 - common_locations: List[str]
                 - transaction_amounts: List[float]
                 - weekday_distribution: Dict[str, int]
+            language: "ro" for Romanian, "en" for English (default: "en")
 
         Returns:
             {
-                "summary": "Your go-to coffee shop - 18 visits this month...",
+                "summary": "Your go-to coffee shop - 18 visits this month..." (or Romanian),
                 "tone": "warm",
-                "contains_advice": false
+                "contains_advice": false,
+                "language": "en" (or "ro")
             }
 
         Example:
+            # English
             result = ai_service.generate_merchant_summary(
                 merchant_name="Starbucks",
-                transaction_stats={...}
+                transaction_stats={...},
+                language="en"
+            )
+
+            # Romanian
+            result = ai_service.generate_merchant_summary(
+                merchant_name="Starbucks",
+                transaction_stats={...},
+                language="ro"
             )
         """
         try:
-            logger.info(f"Generating summary for: {merchant_name}")
+            logger.info(f"Generating summary for: {merchant_name} (language: {language})")
 
             # Convert dict to TransactionStats model
             stats = self._dict_to_transaction_stats(merchant_name, transaction_stats)
 
-            result = self.summarizer.generate_summary(stats)
+            # Generate summary in requested language
+            result = self.summarizer.generate_summary(stats, language=language)
 
-            logger.info(f"Generated summary: {result.summary[:50]}...")
+            logger.info(f"Generated {language} summary: {result.summary[:50]}...")
 
             return result.model_dump()
 
         except Exception as e:
             logger.error(f"Summary generation failed: {e}")
-            # Return safe fallback
+            # Return safe fallback in appropriate language
+            if language == "ro":
+                fallback_text = f"Istoric tranzacții cu {merchant_name}"
+            else:
+                fallback_text = f"Transaction history with {merchant_name}"
+
             return {
-                "summary": f"Transaction history with {merchant_name}",
+                "summary": fallback_text,
                 "tone": "neutral",
-                "contains_advice": False
+                "contains_advice": False,
+                "language": language
             }
 
     def process_search_query(self, query: str) -> Dict[str, Any]:
@@ -186,32 +207,40 @@ class AIService:
         API Endpoint: POST /api/ai/search
 
         Process a natural language search query
+        NOW SUPPORTS ROMANIAN AND ENGLISH! 🇷🇴
 
         This is a multi-step process:
-        1. Safety check (block financial advice)
-        2. Parse query to structured filters
-        3. Backend applies filters and returns results
-        4. Format results into natural language answer
+        1. Detect language (automatic)
+        2. Safety check (block financial advice in both languages)
+        3. Parse query to structured filters
+        4. Backend applies filters and returns results
+        5. Format results into natural language answer
 
         Args:
-            query: Natural language query from user
+            query: Natural language query from user (in Romanian or English)
 
         Returns:
             {
                 "status": "success" | "refused" | "error",
                 "parsed_intent": {...},  # Structured query for backend
-                "refusal_message": "...",  # If refused
+                "language": "ro" | "en",  # Detected language
+                "refusal_message": "...",  # If refused (in user's language)
                 "error": "..."  # If error
             }
 
         Example:
+            # English
             result = ai_service.process_search_query("Show me gas stations in Cluj")
+
+            # Romanian
+            result = ai_service.process_search_query("Arată-mi benzinăriile din Cluj")
+
             # Backend then uses result["parsed_intent"] to filter transactions
         """
         try:
             logger.info(f"Processing search query: {query}")
 
-            # Step 1: Safety check
+            # Step 1: Safety check (language-aware)
             if self.config.enable_safety_filter:
                 safety_result, refusal_msg = self.safety.check_query(query)
 
@@ -223,15 +252,16 @@ class AIService:
                         "message": refusal_msg
                     }
 
-            # Step 2: Parse query into structured filters
+            # Step 2: Parse query into structured filters (language detected here)
             parsed = self.parser.parse(query)
 
-            logger.info(f"Parsed intent: {parsed.intent}")
+            logger.info(f"Parsed intent: {parsed.intent} (language: {parsed.language})")
 
             # Return parsed query for backend to use
             return {
                 "status": "success",
                 "parsed_intent": parsed.model_dump(),
+                "language": parsed.language,  # Include detected language
                 "message": "Query parsed successfully. Backend should now filter transactions."
             }
 
@@ -251,48 +281,68 @@ class AIService:
         API Endpoint: POST /api/ai/format-results
 
         Format search results into natural language answer
+        RESPONDS IN THE USER'S LANGUAGE! 🇷🇴
 
         This is Step 4 of the search process (after backend filters transactions)
 
         Args:
             query: Original natural language query
-            parsed_intent: The parsed query from process_search_query
+            parsed_intent: The parsed query from process_search_query (includes language)
             results: List of transaction dicts from backend
 
         Returns:
             {
-                "answer_text": "You ate at 3 places in Cluj...",
+                "answer_text": "You ate at 3 places in Cluj..." (or Romanian),
                 "summary_stats": {...},
-                "suggestions": ["View merchant profile", ...]
+                "suggestions": ["View merchant profile", ...] (in user's language),
+                "language": "ro" | "en"
             }
 
         Example:
+            # English input → English output
             formatted = ai_service.format_search_results(
                 query="Where did I eat in Cluj?",
-                parsed_intent={...},
+                parsed_intent={..., "language": "en"},
+                results=[...]
+            )
+
+            # Romanian input → Romanian output
+            formatted = ai_service.format_search_results(
+                query="Unde am mâncat în Cluj?",
+                parsed_intent={..., "language": "ro"},
                 results=[...]
             )
         """
         try:
-            logger.info(f"Formatting {len(results)} results for query: {query}")
+            language = parsed_intent.get("language", "en")
+            logger.info(f"Formatting {len(results)} results for query: {query} (language: {language})")
 
             # Convert dicts to models
             parsed = ParsedQuery(**parsed_intent)
             transactions = [self._dict_to_transaction(t) for t in results]
 
-            # Format answer
+            # Format answer (will use detected language from parsed_intent)
             answer = self.formatter.format_answer(query, parsed, transactions)
 
-            logger.info(f"Answer: {answer.answer_text[:50]}...")
+            logger.info(f"Answer ({language}): {answer.answer_text[:50]}...")
 
             return answer.model_dump()
 
         except Exception as e:
             logger.error(f"Result formatting failed: {e}")
+            language = parsed_intent.get("language", "en")
+
+            # Return fallback in appropriate language
+            if language == "ro":
+                fallback_text = f"Am găsit {len(results)} tranzacții."
+            else:
+                fallback_text = f"Found {len(results)} transactions."
+
             return {
-                "answer_text": f"Found {len(results)} transactions.",
+                "answer_text": fallback_text,
                 "summary_stats": {"total_transactions": len(results)},
-                "suggestions": []
+                "suggestions": [],
+                "language": language
             }
 
     # ===================================================================
@@ -354,6 +404,10 @@ class AIService:
                     "openai": true,
                     "normalizer": true,
                     ...
+                },
+                "features": {
+                    "romanian_support": true,
+                    ...
                 }
             }
         """
@@ -377,7 +431,12 @@ class AIService:
                     "parser": True,
                     "safety": True,
                     "formatter": True,
-                    "auth_context": True
+                    "language_detector": True  # NEW
+                },
+                "features": {
+                    "romanian_support": True,  # NEW
+                    "english_support": True,
+                    "auto_language_detection": True
                 },
                 "config": {
                     "model": self.config.default_model,
@@ -392,4 +451,3 @@ class AIService:
                 "status": "unhealthy",
                 "error": str(e)
             }
-
