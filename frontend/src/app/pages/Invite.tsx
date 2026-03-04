@@ -20,7 +20,7 @@ export function Invite() {
   };
 
   const copyLink = () => {
-    navigator.clipboard.writeText(REFERRAL_LINK).catch(() => {});
+    navigator.clipboard.writeText(REFERRAL_LINK).catch(() => { });
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -72,8 +72,8 @@ export function Invite() {
           {[
             { label: 'Invites Sent', value: '12', icon: UserPlus, color: '#FFD100' },
             { label: 'Joined', value: '7', icon: Users, color: '#10B981' },
-            { label: 'Pending', value: '5', icon: Share2, color: '#F59E0B' },
-            { label: 'Earned', value: 'RON 350', icon: Check, color: '#3B82F6' },
+            { label: 'Pending', value: '5', icon: Share2, color: '#FFD100' },
+            { label: 'Earned', value: 'RON 350', icon: Check, color: '#1B2B4B' },
           ].map(stat => (
             <div key={stat.label} className="bg-white rounded-2xl p-4 border border-border">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-2" style={{ background: stat.color + '20' }}>
@@ -121,11 +121,10 @@ export function Invite() {
                   <button
                     onClick={() => sendRequest(user.id)}
                     disabled={sentRequests.has(user.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all text-[11px] ${
-                      sentRequests.has(user.id)
-                        ? 'bg-green-100 text-green-600 cursor-not-allowed'
-                        : 'hover:brightness-105'
-                    }`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all text-[11px] ${sentRequests.has(user.id)
+                      ? 'bg-green-100 text-green-600 cursor-not-allowed'
+                      : 'hover:brightness-105'
+                      }`}
                     style={sentRequests.has(user.id) ? {} : { background: '#FFD100', color: '#1B2B4B' }}
                   >
                     {sentRequests.has(user.id) ? (

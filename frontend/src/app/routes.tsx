@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { AppLayout } from './components/layouts/AppLayout';
 import { Landing } from './pages/Landing';
+import { AboutUs } from './pages/AboutUs';
 import { Auth } from './pages/Auth';
 import { Dashboard } from './pages/Dashboard';
 import { SmartChat } from './pages/SmartChat';
@@ -14,6 +15,10 @@ export const router = createBrowserRouter([
   {
     path: '/',
     element: <Landing />,
+  },
+  {
+    path: '/about',
+    element: <AboutUs />,
   },
   {
     path: '/auth',

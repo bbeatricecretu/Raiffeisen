@@ -15,7 +15,7 @@ function latToY(lat: number) { return ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * 
 function heatColor(spending: number, max: number) {
   const ratio = spending / max;
   if (ratio > 0.7) return '#E53935';
-  if (ratio > 0.4) return '#FF8C00';
+  if (ratio > 0.4) return '#FFD100';
   if (ratio > 0.2) return '#FFD100';
   if (ratio > 0.1) return '#FFF176';
   return '#E8F5E9';
@@ -70,7 +70,7 @@ export function SpendingMap() {
             {/* Legend */}
             <div className="hidden md:flex items-center gap-3 mr-2">
               <span className="text-[11px] text-muted-foreground">Low</span>
-              {['#E8F5E9', '#FFF176', '#FFD100', '#FF8C00', '#E53935'].map((c, i) => (
+              {['#E8F5E9', '#FFF176', '#FFD100', '#FFD100', '#E53935'].map((c, i) => (
                 <div key={i} className="w-5 h-3 rounded" style={{ background: c }} />
               ))}
               <span className="text-[11px] text-muted-foreground">High</span>
@@ -304,9 +304,8 @@ export function SpendingMap() {
               <button
                 key={tx.id}
                 onClick={() => setSelectedPin(tx)}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all text-left ${
-                  selectedPin?.id === tx.id ? 'border-[#FFD100] bg-[#FFD100]/10' : 'border-border hover:bg-muted/50'
-                }`}
+                className={`w-full flex items-center gap-3 p-2.5 rounded-xl border transition-all text-left ${selectedPin?.id === tx.id ? 'border-[#FFD100] bg-[#FFD100]/10' : 'border-border hover:bg-muted/50'
+                  }`}
               >
                 <div className="text-[16px] shrink-0">{categoryIcons[tx.category] || '💳'}</div>
                 <div className="flex-1 min-w-0">

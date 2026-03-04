@@ -15,7 +15,7 @@ const suggestions = [
 const aiInsights = [
   { icon: TrendingUp, title: 'Spending Down 8.3%', desc: 'Great news! February spending decreased compared to January.', color: '#10B981' },
   { icon: Lightbulb, title: 'Save RON 88/month', desc: 'Cancel 2 underused subscriptions to save on recurring costs.', color: '#FFD100' },
-  { icon: Sparkles, title: 'Top Category: Shopping', desc: 'Shopping represents 18.7% of total spend this month.', color: '#8B5CF6' },
+  { icon: Sparkles, title: 'Top Category: Shopping', desc: 'Shopping represents 18.7% of total spend this month.', color: '#1B2B4B' },
 ];
 
 const subData = [
@@ -113,10 +113,10 @@ export function SmartChat() {
         content: text.toLowerCase().includes('subscri')
           ? 'You have 2 active subscriptions totaling **RON 87.98/month**. Netflix (RON 52.99) and Spotify (RON 34.99). You could save RON 1,055.76/year by cancelling both.'
           : text.toLowerCase().includes('lidl')
-          ? 'You\'ve visited Lidl **18 times** with a total of **RON 2,340** spent. Average transaction: RON 130. Your last visit was Feb 28.'
-          : text.toLowerCase().includes('month') || text.toLowerCase().includes('spend')
-          ? 'In February 2026 you spent **RON 2,816.28** across 15 transactions — **8.3% less** than January. Top category: Shopping (RON 527.50).'
-          : 'I found relevant data for your query. Your spending patterns look healthy! Would you like a detailed breakdown by category or merchant?',
+            ? 'You\'ve visited Lidl **18 times** with a total of **RON 2,340** spent. Average transaction: RON 130. Your last visit was Feb 28.'
+            : text.toLowerCase().includes('month') || text.toLowerCase().includes('spend')
+              ? 'In February 2026 you spent **RON 2,816.28** across 15 transactions — **8.3% less** than January. Top category: Shopping (RON 527.50).'
+              : 'I found relevant data for your query. Your spending patterns look healthy! Would you like a detailed breakdown by category or merchant?',
         time: new Date().toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }),
         data: text.toLowerCase().includes('subscri') ? 'suggestions' : text.toLowerCase().includes('lidl') ? 'transactions' : text.toLowerCase().includes('month') ? 'chart' : undefined
       };
@@ -154,11 +154,10 @@ export function SmartChat() {
                 )}
                 <div>
                   <div
-                    className={`rounded-2xl px-4 py-3 ${
-                      msg.role === 'user'
+                    className={`rounded-2xl px-4 py-3 ${msg.role === 'user'
                         ? 'rounded-tr-sm text-white'
                         : 'rounded-tl-sm'
-                    }`}
+                      }`}
                     style={{
                       background: msg.role === 'user' ? '#1B2B4B' : '#F0F4FF',
                     }}

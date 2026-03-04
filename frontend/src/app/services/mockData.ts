@@ -98,26 +98,26 @@ export const pendingTransaction: Transaction = {
 // ─── COUNTIES ────────────────────────────────────────────────────────────────
 
 export const counties: County[] = [
-  { id: 'B',  name: 'Bucharest', lat: 44.43, lon: 26.10, spending: 15420, txCount: 47 },
-  { id: 'CJ', name: 'Cluj',      lat: 46.77, lon: 23.60, spending: 8730,  txCount: 28 },
-  { id: 'TM', name: 'Timis',     lat: 45.76, lon: 21.23, spending: 6520,  txCount: 21 },
-  { id: 'IS', name: 'Iasi',      lat: 47.16, lon: 27.59, spending: 5890,  txCount: 19 },
-  { id: 'CT', name: 'Constanta', lat: 44.18, lon: 28.65, spending: 4210,  txCount: 14 },
-  { id: 'BV', name: 'Brasov',    lat: 45.65, lon: 25.61, spending: 3870,  txCount: 13 },
-  { id: 'PH', name: 'Prahova',   lat: 45.10, lon: 25.79, spending: 2940,  txCount: 10 },
-  { id: 'BC', name: 'Bacau',     lat: 46.57, lon: 26.91, spending: 2180,  txCount:  8 },
-  { id: 'SB', name: 'Sibiu',     lat: 45.80, lon: 24.15, spending: 2310,  txCount:  8 },
-  { id: 'MS', name: 'Mures',     lat: 46.55, lon: 24.56, spending: 1950,  txCount:  7 },
-  { id: 'DJ', name: 'Dolj',      lat: 44.30, lon: 23.81, spending: 1820,  txCount:  7 },
-  { id: 'AG', name: 'Arges',     lat: 44.85, lon: 24.87, spending: 1640,  txCount:  6 },
-  { id: 'SV', name: 'Suceava',   lat: 47.65, lon: 26.25, spending: 1420,  txCount:  5 },
-  { id: 'GL', name: 'Galati',    lat: 45.43, lon: 28.05, spending: 1280,  txCount:  5 },
-  { id: 'BH', name: 'Bihor',     lat: 47.05, lon: 22.00, spending: 1150,  txCount:  4 },
-  { id: 'AR', name: 'Arad',      lat: 46.18, lon: 21.31, spending:  980,  txCount:  4 },
-  { id: 'HD', name: 'Hunedoara', lat: 45.88, lon: 22.91, spending:  870,  txCount:  3 },
-  { id: 'VL', name: 'Valcea',    lat: 45.10, lon: 24.37, spending:  760,  txCount:  3 },
-  { id: 'MM', name: 'Maramures', lat: 47.66, lon: 24.13, spending:  680,  txCount:  2 },
-  { id: 'BT', name: 'Botosani',  lat: 47.75, lon: 26.67, spending:  540,  txCount:  2 },
+  { id: 'B', name: 'Bucharest', lat: 44.43, lon: 26.10, spending: 15420, txCount: 47 },
+  { id: 'CJ', name: 'Cluj', lat: 46.77, lon: 23.60, spending: 8730, txCount: 28 },
+  { id: 'TM', name: 'Timis', lat: 45.76, lon: 21.23, spending: 6520, txCount: 21 },
+  { id: 'IS', name: 'Iasi', lat: 47.16, lon: 27.59, spending: 5890, txCount: 19 },
+  { id: 'CT', name: 'Constanta', lat: 44.18, lon: 28.65, spending: 4210, txCount: 14 },
+  { id: 'BV', name: 'Brasov', lat: 45.65, lon: 25.61, spending: 3870, txCount: 13 },
+  { id: 'PH', name: 'Prahova', lat: 45.10, lon: 25.79, spending: 2940, txCount: 10 },
+  { id: 'BC', name: 'Bacau', lat: 46.57, lon: 26.91, spending: 2180, txCount: 8 },
+  { id: 'SB', name: 'Sibiu', lat: 45.80, lon: 24.15, spending: 2310, txCount: 8 },
+  { id: 'MS', name: 'Mures', lat: 46.55, lon: 24.56, spending: 1950, txCount: 7 },
+  { id: 'DJ', name: 'Dolj', lat: 44.30, lon: 23.81, spending: 1820, txCount: 7 },
+  { id: 'AG', name: 'Arges', lat: 44.85, lon: 24.87, spending: 1640, txCount: 6 },
+  { id: 'SV', name: 'Suceava', lat: 47.65, lon: 26.25, spending: 1420, txCount: 5 },
+  { id: 'GL', name: 'Galati', lat: 45.43, lon: 28.05, spending: 1280, txCount: 5 },
+  { id: 'BH', name: 'Bihor', lat: 47.05, lon: 22.00, spending: 1150, txCount: 4 },
+  { id: 'AR', name: 'Arad', lat: 46.18, lon: 21.31, spending: 980, txCount: 4 },
+  { id: 'HD', name: 'Hunedoara', lat: 45.88, lon: 22.91, spending: 870, txCount: 3 },
+  { id: 'VL', name: 'Valcea', lat: 45.10, lon: 24.37, spending: 760, txCount: 3 },
+  { id: 'MM', name: 'Maramures', lat: 47.66, lon: 24.13, spending: 680, txCount: 2 },
+  { id: 'BT', name: 'Botosani', lat: 47.75, lon: 26.67, spending: 540, txCount: 2 },
 ];
 
 // ─── USERS ───────────────────────────────────────────────────────────────────
@@ -200,13 +200,13 @@ export const initialChatMessages: ChatMessage[] = [
 
 export const spendingByCategory = [
   { name: 'Groceries', amount: 414.80, fill: '#FFD100' },
-  { name: 'Shopping',  amount: 527.50, fill: '#FF8C00' },
-  { name: 'Fuel',      amount: 500.00, fill: '#1B2B4B' },
-  { name: 'Subs',      amount: 87.98,  fill: '#3B82F6' },
-  { name: 'Food',      amount: 109.50, fill: '#10B981' },
-  { name: 'Transport', amount: 38.50,  fill: '#8B5CF6' },
-  { name: 'Health',    amount: 120.00, fill: '#F472B6' },
-  { name: 'Utilities', amount: 18.00,  fill: '#06B6D4' },
+  { name: 'Shopping', amount: 527.50, fill: '#1B2B4B' },
+  { name: 'Fuel', amount: 500.00, fill: '#1B2B4B' },
+  { name: 'Subs', amount: 87.98, fill: '#94A3B8' },
+  { name: 'Food', amount: 109.50, fill: '#10B981' },
+  { name: 'Transport', amount: 38.50, fill: '#000000' },
+  { name: 'Health', amount: 120.00, fill: '#10B981' },
+  { name: 'Utilities', amount: 18.00, fill: '#94A3B8' },
 ];
 
 export const monthlySpending = [

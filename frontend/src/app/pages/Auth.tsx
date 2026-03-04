@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Eye, EyeOff, CheckCircle2, AlertCircle, Zap, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 
 type Mode = 'signup' | 'login';
 
@@ -113,9 +113,7 @@ export function Auth() {
       >
         <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 30% 70%, rgba(255,209,0,0.12) 0%, transparent 60%)' }} />
         <button onClick={() => navigate('/')} className="flex items-center gap-2 z-10 relative w-fit">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#FFD100' }}>
-            <Zap size={16} className="text-[#1B2B4B]" strokeWidth={2.5} />
-          </div>
+          <img src="/logo.png" alt="Connect & Grow" className="w-10 h-10 object-contain" />
           <span className="text-white font-bold" style={{ fontSize: '16px' }}>Connect & Grow</span>
         </button>
         <div className="z-10 relative">
@@ -167,17 +165,15 @@ export function Auth() {
           <div className="flex gap-1 bg-muted p-1 rounded-xl mb-8">
             <button
               onClick={() => setMode('signup')}
-              className={`flex-1 py-2.5 rounded-lg text-[13px] font-semibold transition-all ${
-                mode === 'signup' ? 'bg-white text-[#1B2B4B] shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={`flex-1 py-2.5 rounded-lg text-[13px] font-semibold transition-all ${mode === 'signup' ? 'bg-white text-[#1B2B4B] shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
             >
               Sign Up
             </button>
             <button
               onClick={() => setMode('login')}
-              className={`flex-1 py-2.5 rounded-lg text-[13px] font-semibold transition-all ${
-                mode === 'login' ? 'bg-white text-[#1B2B4B] shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={`flex-1 py-2.5 rounded-lg text-[13px] font-semibold transition-all ${mode === 'login' ? 'bg-white text-[#1B2B4B] shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
             >
               Log In
             </button>
@@ -327,9 +323,8 @@ export function Auth() {
                   <label className="flex items-start gap-3 cursor-pointer">
                     <div
                       onClick={() => setAllowOnline(!allowOnline)}
-                      className={`w-5 h-5 rounded flex items-center justify-center mt-0.5 shrink-0 transition-all border-2 ${
-                        allowOnline ? 'border-[#FFD100]' : 'border-border'
-                      }`}
+                      className={`w-5 h-5 rounded flex items-center justify-center mt-0.5 shrink-0 transition-all border-2 ${allowOnline ? 'border-[#FFD100]' : 'border-border'
+                        }`}
                       style={{ background: allowOnline ? '#FFD100' : 'white' }}
                     >
                       {allowOnline && <CheckCircle2 size={12} className="text-[#1B2B4B]" />}
@@ -340,9 +335,8 @@ export function Auth() {
                   <label className="flex items-start gap-3 cursor-pointer">
                     <div
                       onClick={() => setAcceptTerms(!acceptTerms)}
-                      className={`w-5 h-5 rounded flex items-center justify-center mt-0.5 shrink-0 transition-all border-2 ${
-                        acceptTerms ? 'border-[#FFD100]' : 'border-border'
-                      }`}
+                      className={`w-5 h-5 rounded flex items-center justify-center mt-0.5 shrink-0 transition-all border-2 ${acceptTerms ? 'border-[#FFD100]' : 'border-border'
+                        }`}
                       style={{ background: acceptTerms ? '#FFD100' : 'white' }}
                     >
                       {acceptTerms && <CheckCircle2 size={12} className="text-[#1B2B4B]" />}

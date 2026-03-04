@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router';
 import {
   LayoutDashboard, CreditCard, MessageSquare, Map, CheckCircle2,
   Users, UserPlus, Search, Bell, ChevronDown, LogOut, Settings,
-  User, Menu, X, TrendingUp, Building2, Zap
+  User, Menu, X, TrendingUp, Building2
 } from 'lucide-react';
 import { currentUser } from '../../services/mockData';
 
@@ -51,8 +51,8 @@ export function AppLayout() {
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10">
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl shrink-0" style={{ background: 'var(--brand-yellow)' }}>
-            <Zap size={18} className="text-[#1B2B4B]" strokeWidth={2.5} />
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0 bg-white/10 p-1">
+            <img src="/logo.png" alt="Connect & Grow" className="w-full h-full object-contain rounded-lg" />
           </div>
           {sidebarOpen && (
             <div>
@@ -75,7 +75,7 @@ export function AppLayout() {
             {sidebarOpen && (
               <div className="flex items-center gap-2 px-3 mb-2">
                 <Building2 size={12} className="text-white/30" />
-                <span className="text-white/30 text-[10px] font-bold uppercase tracking-widest">Bank App</span>
+                <span className="text-white/30 text-[10px] font-bold uppercase tracking-widest">Bank</span>
               </div>
             )}
             {navItems.bank.map((item) => (
@@ -100,11 +100,10 @@ export function AppLayout() {
                       <>
                         <span className="text-sm font-medium flex-1">{item.label}</span>
                         {item.badge && (
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            item.badge === 'AI'
-                              ? 'bg-[#FFD100]/20 text-[#FFD100]'
-                              : 'bg-red-500/80 text-white'
-                          }`}>{item.badge}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.badge === 'AI'
+                            ? 'bg-[#FFD100]/20 text-[#FFD100]'
+                            : 'bg-red-500/80 text-white'
+                            }`}>{item.badge}</span>
                         )}
                       </>
                     )}
@@ -183,7 +182,7 @@ export function AppLayout() {
                 onClick={() => navigate('/app/dashboard')}
                 className="px-3 py-1.5 rounded-md text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-white transition-all"
               >
-                Bank App
+                Bank
               </button>
               <button
                 onClick={() => navigate('/app/community/c1')}

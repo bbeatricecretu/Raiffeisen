@@ -52,7 +52,7 @@ function PostCard({ post, onLike }: { post: FeedPost; onLike: (id: string) => vo
           <div className="flex items-center gap-1.5">
             <div className="flex -space-x-1">
               <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: '#FFD100', fontSize: '8px' }}>❤️</div>
-              <div className="w-4 h-4 rounded-full flex items-center justify-center bg-blue-500" style={{ fontSize: '8px' }}>👍</div>
+              <div className="w-4 h-4 rounded-full flex items-center justify-center bg-[#1B2B4B]" style={{ fontSize: '8px' }}>👍</div>
             </div>
             <span className="text-muted-foreground" style={{ fontSize: '11px' }}>{post.likes + (post.isLiked ? 0 : 0)}</span>
           </div>
@@ -69,15 +69,14 @@ function PostCard({ post, onLike }: { post: FeedPost; onLike: (id: string) => vo
         {[
           { icon: Heart, label: 'Like', active: post.isLiked, onClick: () => onLike(post.id) },
           { icon: MessageCircle, label: 'Comment', active: false, onClick: () => setShowComments(!showComments) },
-          { icon: Share2, label: 'Share', active: false, onClick: () => {} },
-          { icon: Bookmark, label: 'Save', active: false, onClick: () => {} },
+          { icon: Share2, label: 'Share', active: false, onClick: () => { } },
+          { icon: Bookmark, label: 'Save', active: false, onClick: () => { } },
         ].map(action => (
           <button
             key={action.label}
             onClick={action.onClick}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 text-[12px] font-semibold transition-colors hover:bg-muted/50 ${
-              action.active ? 'text-red-500' : 'text-muted-foreground'
-            }`}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 text-[12px] font-semibold transition-colors hover:bg-muted/50 ${action.active ? 'text-red-500' : 'text-muted-foreground'
+              }`}
           >
             <action.icon size={14} fill={action.active ? 'currentColor' : 'none'} />
             <span className="hidden sm:inline">{action.label}</span>
@@ -202,7 +201,7 @@ export function CommunityFeed() {
                 onClick={() => setShowCreatePost(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold text-muted-foreground hover:bg-muted transition-colors"
               >
-                <Image size={14} className="text-[#3B82F6]" /> Photo
+                <Image size={14} className="text-[#1B2B4B]" /> Photo
               </button>
               <button
                 onClick={() => setShowCreatePost(true)}
