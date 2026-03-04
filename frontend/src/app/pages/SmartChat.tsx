@@ -12,11 +12,6 @@ const suggestions = [
   'Any unusual transactions?',
 ];
 
-const aiInsights = [
-  { icon: TrendingUp, title: 'Spending Down 8.3%', desc: 'Great news! February spending decreased compared to January.', color: '#10B981' },
-  { icon: Lightbulb, title: 'Save RON 88/month', desc: 'Cancel 2 underused subscriptions to save on recurring costs.', color: '#FFD100' },
-  { icon: Sparkles, title: 'Top Category: Shopping', desc: 'Shopping represents 18.7% of total spend this month.', color: '#1B2B4B' },
-];
 
 const subData = [
   { name: 'Netflix', amount: 52.99, frequency: 'Monthly' },
@@ -155,8 +150,8 @@ export function SmartChat() {
                 <div>
                   <div
                     className={`rounded-2xl px-4 py-3 ${msg.role === 'user'
-                        ? 'rounded-tr-sm text-white'
-                        : 'rounded-tl-sm'
+                      ? 'rounded-tr-sm text-white'
+                      : 'rounded-tl-sm'
                       }`}
                     style={{
                       background: msg.role === 'user' ? '#1B2B4B' : '#F0F4FF',
@@ -228,76 +223,6 @@ export function SmartChat() {
         </div>
       </div>
 
-      {/* Right — AI Insights Panel */}
-      <div className="w-80 bg-white border-l border-border overflow-y-auto shrink-0 hidden lg:block">
-        <div className="p-5 border-b border-border">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={16} className="text-[#FFD100]" />
-            <h3 style={{ fontSize: '14px', color: '#1B2B4B' }}>AI Insights</h3>
-          </div>
-          <p className="text-muted-foreground" style={{ fontSize: '11px' }}>Real-time analysis of your finances</p>
-        </div>
-
-        <div className="p-4 space-y-4">
-          {/* Insight cards */}
-          {aiInsights.map((insight, i) => (
-            <div key={i} className="rounded-xl border border-border p-3.5 hover:shadow-sm transition-all">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: insight.color + '20' }}>
-                  <insight.icon size={15} style={{ color: insight.color }} />
-                </div>
-                <div>
-                  <div className="font-semibold text-[#1B2B4B]" style={{ fontSize: '12px' }}>{insight.title}</div>
-                  <div className="text-muted-foreground mt-0.5" style={{ fontSize: '11px', lineHeight: '1.5' }}>{insight.desc}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {/* Category breakdown */}
-          <div className="rounded-xl border border-border overflow-hidden">
-            <div className="px-4 py-3 border-b border-border">
-              <div className="font-semibold text-[#1B2B4B]" style={{ fontSize: '13px' }}>Category Breakdown</div>
-            </div>
-            <div className="p-3 space-y-2.5">
-              {spendingByCategory.map(cat => (
-                <div key={cat.name}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-medium text-[#1B2B4B]">{cat.name}</span>
-                    <span className="text-[11px] font-bold text-[#1B2B4B]">RON {cat.amount}</span>
-                  </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${(cat.amount / 527.5) * 100}%`,
-                        background: cat.fill
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Quick suggestions */}
-          <div className="rounded-xl border border-border p-4">
-            <div className="font-semibold text-[#1B2B4B] mb-3" style={{ fontSize: '13px' }}>Quick Queries</div>
-            <div className="space-y-2">
-              {suggestions.map(s => (
-                <button
-                  key={s}
-                  onClick={() => sendMessage(s)}
-                  className="w-full text-left flex items-center justify-between gap-2 px-3 py-2 rounded-lg hover:bg-muted transition-colors group"
-                >
-                  <span className="text-[11px] text-muted-foreground group-hover:text-[#1B2B4B]">{s}</span>
-                  <ArrowRight size={11} className="text-muted-foreground shrink-0" />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

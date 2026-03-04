@@ -26,10 +26,17 @@ export function Landing() {
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div>
 
-            <h1 style={{ fontSize: '52px', lineHeight: '1.1', fontWeight: 700, color: '#1B2B4B' }}>
-              Banking that<br />
-              <span style={{ color: '#FFD100' }}>connects</span> and<br />
-              <span style={{ color: '#FFD100' }}>grows</span> with you.
+            <h1
+              style={{
+                fontSize: 'clamp(48px, 5vw, 72px)',
+                lineHeight: 1.05,
+                fontWeight: 700,
+                color: '#1B2B4B',
+                letterSpacing: '-0.03em',
+                fontFamily: "'Georgia', 'Times New Roman', serif",
+              }}
+            >
+              Connect & Grow.
             </h1>
             <p className="mt-6 text-muted-foreground" style={{ fontSize: '17px', lineHeight: '1.7', maxWidth: '480px' }}>
               A next-generation fintech platform combining intelligent spending analytics, an interactive Romania map, and a powerful professional community network.

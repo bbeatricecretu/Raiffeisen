@@ -130,9 +130,9 @@ export function Dashboard() {
             {/* Row 1: 3 buttons */}
             <div className="flex items-center justify-center gap-3">
               {[
-                { icon: Send, label: 'Send', onClick: () => { } },
-                { icon: Users, label: 'Merchants', onClick: () => { } },
-                { icon: ReceiptText, label: 'Transactions', onClick: () => navigate('/app/confirm') },
+                { icon: Send, label: 'Send', onClick: () => navigate('/app/send') },
+                { icon: Users, label: 'Merchants', onClick: () => navigate('/app/merchant/emag') },
+                { icon: ReceiptText, label: 'Transactions', onClick: () => navigate('/app/transactions') },
               ].map(action => (
                 <button
                   key={action.label}
@@ -150,8 +150,8 @@ export function Dashboard() {
             {/* Row 2: 2 buttons */}
             <div className="flex items-center justify-center gap-3">
               {[
-                { icon: FileText, label: 'Details', onClick: () => { } },
-                { icon: RefreshCw, label: 'Exchange', onClick: () => { } },
+                { icon: FileText, label: 'Details', onClick: () => navigate('/app/details') },
+                { icon: RefreshCw, label: 'Exchange', onClick: () => navigate('/app/exchange') },
               ].map(action => (
                 <button
                   key={action.label}
@@ -198,8 +198,14 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 border border-border">
-              <span className="text-muted-foreground" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Top Merchant</span>
+            <div
+              className="bg-white rounded-2xl p-5 border border-border cursor-pointer hover:border-[#FFD100] hover:shadow-sm transition-all"
+              onClick={() => navigate('/app/merchant/emag')}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Top Merchant</span>
+                <ChevronRight size={14} className="text-muted-foreground" />
+              </div>
               <div className="font-bold text-[#1B2B4B] mt-2" style={{ fontSize: '18px' }}>Emag.ro</div>
               <div className="text-muted-foreground mt-1" style={{ fontSize: '13px' }}>RON 2,100 total · 6 visits</div>
               <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
@@ -219,7 +225,7 @@ export function Dashboard() {
                 <BarChart data={spendingByCategory} barSize={28} barCategoryGap="30%">
                   <CartesianGrid strokeDasharray="3 3" stroke="#F0F4FF" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} width={50} tickFormatter={v => `${v}`} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} width={50} tickFormatter={(v: string | number) => `${v}`} />
                   <Tooltip
                     formatter={(val: number) => [`RON ${val.toFixed(2)}`, 'Spent']}
                     contentStyle={{ borderRadius: '12px', border: '1px solid #E2E8F0', fontSize: '12px' }}
