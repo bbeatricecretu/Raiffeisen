@@ -188,12 +188,6 @@ export const feedPosts: FeedPost[] = [
 
 export const initialChatMessages: ChatMessage[] = [
   { id: 'cm1', role: 'ai', content: 'Hello! I\'m your Connect & Grow AI Assistant. I can analyze your spending, find patterns, and give you smart financial insights. What would you like to know?', time: '09:00' },
-  { id: 'cm2', role: 'user', content: 'How much did I spend last month?', time: '09:01' },
-  { id: 'cm3', role: 'ai', content: 'In February 2026, your total spending was **RON 2,816.28** across 15 transactions. This is 8.3% less than January. Your top category was Groceries (RON 414.80), followed by Shopping (RON 527.50) and Fuel (RON 500.00).', time: '09:01', data: 'chart' },
-  { id: 'cm4', role: 'user', content: 'What did I pay at Lidl?', time: '09:03' },
-  { id: 'cm5', role: 'ai', content: 'You\'ve made **18 visits** to Lidl with a total of **RON 2,340** spent. Your last visit was February 28 for RON 125.50. Your average transaction is around RON 130.', time: '09:03', data: 'transactions' },
-  { id: 'cm6', role: 'user', content: 'Show me my subscriptions', time: '09:05' },
-  { id: 'cm7', role: 'ai', content: 'You have **2 active subscriptions** totaling RON 87.98/month. Here\'s the breakdown:', time: '09:05', data: 'suggestions' },
 ];
 
 // ─── SPENDING CHART DATA ──────────────────────────────────────────────────────

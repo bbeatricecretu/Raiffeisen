@@ -1,17 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, Lightbulb, TrendingUp, ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, Bot } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { initialChatMessages, transactions, spendingByCategory, type ChatMessage } from '../services/mockData';
-
-const suggestions = [
-  'How much did I spend last month?',
-  'What did I pay at Lidl?',
-  'Show me subscriptions',
-  'Top 3 merchants this year',
-  'Compare Jan vs Feb spending',
-  'Any unusual transactions?',
-];
-
+import { initialChatMessages, currentUser, spendingByCategory, type ChatMessage } from '../services/mockData';
 
 const subData = [
   { name: 'Netflix', amount: 52.99, frequency: 'Monthly' },
@@ -95,7 +85,8 @@ export function SmartChat() {
   const sendMessage = (text: string) => {
     if (!text.trim()) return;
     const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`, role: 'user', content: text, time: new Date().toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+      id: `user-${Date.now()}`, role: 'user', content: text,
+      time: new Date().toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
     };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
@@ -120,67 +111,56 @@ export function SmartChat() {
   };
 
   return (
-    <div className="h-full flex overflow-hidden" style={{ height: 'calc(100vh - 64px)' }}>
-      {/* Chat area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Chat header */}
-        <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-border shrink-0">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#FFD100' }}>
-            <Bot size={20} className="text-[#1B2B4B]" />
-          </div>
-          <div>
-            <div className="font-semibold text-[#1B2B4B]" style={{ fontSize: '15px' }}>AI Financial Assistant</div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              <span className="text-muted-foreground" style={{ fontSize: '11px' }}>Online · Powered by Connect & Grow AI</span>
-            </div>
-          </div>
-        </div>
+    <div className="flex flex-col items-center justify-start px-4 py-10" style={{ minHeight: 'calc(100vh - 64px)' }}>
+
+      {/* Heading */}
+      <h1 className="font-bold text-[#1B2B4B] mb-8 text-center" style={{ fontSize: '34px', letterSpacing: '-0.5px' }}>
+        Hello, {currentUser.name.split(' ')[0]}!
+      </h1>
+
+      {/* Chat card */}
+      <div className="w-full max-w-2xl flex flex-col rounded-3xl border border-border bg-white shadow-sm overflow-hidden" style={{ minHeight: '420px', maxHeight: '620px' }}>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
           {messages.map(msg => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] ${msg.role === 'user' ? '' : 'flex items-start gap-2.5'}`}>
+              <div className={`max-w-[80%] ${msg.role === 'ai' ? 'flex items-start gap-3' : ''}`}>
                 {msg.role === 'ai' && (
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: '#FFD100' }}>
-                    <Bot size={14} className="text-[#1B2B4B]" />
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: '#FFD100' }}>
+                    <Bot size={15} className="text-[#1B2B4B]" />
                   </div>
                 )}
                 <div>
                   <div
-                    className={`rounded-2xl px-4 py-3 ${msg.role === 'user'
-                      ? 'rounded-tr-sm text-white'
-                      : 'rounded-tl-sm'
-                      }`}
+                    className="rounded-2xl px-4 py-3"
                     style={{
-                      background: msg.role === 'user' ? '#1B2B4B' : '#F0F4FF',
+                      background: msg.role === 'user' ? '#1B2B4B' : '#F5F7FF',
+                      borderTopRightRadius: msg.role === 'user' ? '6px' : undefined,
+                      borderTopLeftRadius: msg.role === 'ai' ? '6px' : undefined,
                     }}
                   >
                     <p
                       className={msg.role === 'user' ? 'text-white' : 'text-[#1B2B4B]'}
-                      style={{ fontSize: '13px', lineHeight: '1.6' }}
+                      style={{ fontSize: '14px', lineHeight: '1.65' }}
                       dangerouslySetInnerHTML={{
                         __html: msg.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                       }}
                     />
                   </div>
                   {msg.data && <AiResponseCard data={msg.data} />}
-                  <div className={`mt-1 ${msg.role === 'user' ? 'text-right' : ''}`}>
-                    <span className="text-muted-foreground" style={{ fontSize: '10px' }}>{msg.time}</span>
-                  </div>
                 </div>
               </div>
             </div>
           ))}
           {isTyping && (
-            <div className="flex items-start gap-2.5">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: '#FFD100' }}>
-                <Bot size={14} className="text-[#1B2B4B]" />
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#FFD100' }}>
+                <Bot size={15} className="text-[#1B2B4B]" />
               </div>
-              <div className="bg-[#F0F4FF] rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1">
+              <div className="bg-[#F5F7FF] rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1.5">
                 {[0, 1, 2].map(i => (
-                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#1B2B4B]/40 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#1B2B4B]/30 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
               </div>
             </div>
@@ -188,41 +168,27 @@ export function SmartChat() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggestions row */}
-        <div className="px-6 pb-3 flex gap-2 overflow-x-auto shrink-0">
-          {suggestions.slice(0, 4).map(s => (
-            <button
-              key={s}
-              onClick={() => sendMessage(s)}
-              className="whitespace-nowrap px-3 py-1.5 rounded-full border border-[#1B2B4B]/20 text-[11px] font-medium text-[#1B2B4B]/70 hover:border-[#FFD100] hover:text-[#1B2B4B] hover:bg-[#FFD100]/10 transition-all shrink-0"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
-        {/* Input */}
-        <div className="px-6 pb-6 shrink-0">
-          <div className="flex items-center gap-3 bg-white rounded-2xl border border-border shadow-sm px-4 py-3">
+        {/* Input bar */}
+        <div className="px-5 py-4 border-t border-border bg-white">
+          <div className="flex items-center gap-3 bg-[#F5F7FF] rounded-full px-5 py-3">
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); } }}
-              placeholder="Ask anything about your finances..."
-              className="flex-1 text-[13px] outline-none text-[#1B2B4B] placeholder:text-muted-foreground bg-transparent"
+              placeholder="Ask anything about your finances"
+              className="flex-1 text-[13px] outline-none text-[#1B2B4B] placeholder:text-[#1B2B4B]/40 bg-transparent"
             />
             <button
               onClick={() => sendMessage(input)}
               disabled={!input.trim() || isTyping}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all disabled:opacity-40 hover:brightness-105"
-              style={{ background: '#FFD100' }}
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-30 hover:brightness-105 shrink-0"
+              style={{ background: '#1B2B4B' }}
             >
-              <Send size={15} className="text-[#1B2B4B]" />
+              <ArrowRight size={15} className="text-white" />
             </button>
           </div>
         </div>
       </div>
-
     </div>
   );
 }

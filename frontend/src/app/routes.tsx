@@ -15,6 +15,7 @@ import { Exchange } from './pages/Exchange';
 import { SendMoney } from './pages/SendMoney';
 import { Transactions } from './pages/Transactions';
 import { MerchantDetails } from './pages/MerchantDetails';
+import { TransactionDetails } from './pages/TransactionDetails';
 
 export const router = createBrowserRouter([
   {
@@ -45,6 +46,7 @@ export const router = createBrowserRouter([
       { path: 'exchange', element: <Exchange /> },
       { path: 'send', element: <SendMoney /> },
       { path: 'transactions', element: <Transactions /> },
+      { path: 'transaction/:id', element: <TransactionDetails /> },
       { path: 'merchant/:id', element: <MerchantDetails /> },
     ],
   },

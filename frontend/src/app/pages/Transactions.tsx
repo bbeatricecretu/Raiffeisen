@@ -1,19 +1,37 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, MessageSquare, ReceiptText, ChevronRight, Search, Filter, Calendar, Bus, ShoppingCart, Utensils, CreditCard, Activity, Music, Banknote, TrendingUp, Lightbulb, Sparkles } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Search, Calendar, Bus, ShoppingCart, Utensils, CreditCard, Zap, Music, Banknote, TrendingUp, Lightbulb, Sparkles, Heart, Dumbbell, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { transactions as mockTransactions } from '../services/mockData';
 
 // Available colors for categories
 const CATEGORY_COLORS: Record<string, string> = {
     'Groceries': '#FFD100',
     'Shopping': '#1B2B4B',
     'Fuel': '#2A3C5F',
-    'Subs': '#94A3B8',
+    'Subscriptions': '#94A3B8',
     'Food': '#22C55E',
     'Transport': '#000000',
     'Health': '#22C55E',
     'Utilities': '#94A3B8',
+    'Entertainment': '#F97316',
     'Other': '#CBD5E1'
 };
+
+function categoryIcon(cat: string) {
+    const cls = 'text-[#1B2B4B]/60';
+    const size = 20;
+    switch (cat) {
+        case 'Groceries': return <ShoppingCart size={size} className={cls} />;
+        case 'Food': return <Utensils size={size} className={cls} />;
+        case 'Transport': return <Bus size={size} className={cls} />;
+        case 'Subscriptions': return <Music size={size} className={cls} />;
+        case 'Fuel': return <Zap size={size} className={cls} />;
+        case 'Shopping': return <ShoppingCart size={size} className={cls} />;
+        case 'Health': return <Dumbbell size={size} className={cls} />;
+        case 'Utilities': return <CreditCard size={size} className={cls} />;
+        default: return <Banknote size={size} className={cls} />;
+    }
+}
 
 const aiInsights = [
     { icon: TrendingUp, title: 'Spending Down 8.3%', desc: 'Great news! February spending decreased compared to January.', color: '#10B981', bg: '#ecfdf5' },
@@ -29,17 +47,16 @@ export function Transactions() {
     const [customStartDate, setCustomStartDate] = useState('');
     const [customEndDate, setCustomEndDate] = useState('');
 
-    const allTransactions = useMemo(() => [
-        { title: 'CTP CLUJ VALIDATOR', category: 'Transport', desc: 'CTP CLUJ VALIDATOR, CLUJ NAPOCA, RO', date: '28 feb. 2026', amount: '-3.5 RON', icon: <Bus size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'Forever Living', category: 'Shopping', desc: 'FOREVER LIVING PRODUCT, BUCURESTI, RO', date: '26 feb. 2026', amount: '-451.02 RON', icon: <ShoppingCart size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'Transfer din card 2496 CRETU...', category: 'Other', desc: 'BANCA TRANSILVANIA', date: '26 feb. 2026', amount: '-4000.0 RON', icon: <Banknote size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'INDPRODCOM SRL', category: 'Groceries', desc: 'INDPRODCOM SRL,Str. Principala, SANTANDR...', date: '25 feb. 2026', amount: '-4.0 RON', icon: <ShoppingCart size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'C.A.S.P.', category: 'Food', desc: 'Strada Émile Zola 2, 400112, CLUJ-NAPOCA,...', date: '25 feb. 2026', amount: '-23.72 RON', icon: <Utensils size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'Mega Image', category: 'Groceries', desc: 'MEGAIMAGE 1069 MI Her,Str Herculane nr 1,...', date: '25 feb. 2026', amount: '-4.49 RON', icon: <ShoppingCart size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'Mega Image', category: 'Groceries', desc: 'MEGAIMAGE 1069 MI Her,Str Herculane nr...', date: '20 feb. 2026', amount: '-12.98 RON', icon: <ShoppingCart size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'Spotify', category: 'Subs', desc: 'Birger Jarlsgatan 61, 113 56, Stockholm, SWE,...', date: '19 feb. 2026', amount: '-14.0 RON', icon: <Music size={20} className="text-[#1B2B4B]/60" /> },
-        { title: 'Revolut', category: 'Other', desc: 'Revolut**0526*, Dublin, IE', date: '17 feb. 2026', amount: '-180.0 RON', icon: <CreditCard size={20} className="text-[#1B2B4B]/60" /> }
-    ], []);
+    const allTransactions = useMemo(() => mockTransactions.map(tx => ({
+        id: tx.id,
+        title: tx.merchant,
+        category: tx.category,
+        desc: `${tx.iban} · ${tx.county}`,
+        date: new Date(tx.date).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short', year: 'numeric' }),
+        isoDate: tx.date,
+        amount: `-${tx.amount.toFixed(2)} RON`,
+        icon: categoryIcon(tx.category),
+    })), []);
 
     // Filter transactions
     const filteredTransactions = useMemo(() => {
@@ -56,34 +73,14 @@ export function Transactions() {
 
             // Apply date filter
             if (dateRange === 'Custom Range' && customStartDate && customEndDate) {
-                // Parse the mock dates ('28 feb. 2026' format) for a basic comparison
-                const monthMap: Record<string, number> = {
-                    'ian.': 0, 'feb.': 1, 'mar.': 2, 'apr.': 3, 'mai': 4, 'iun.': 5,
-                    'iul.': 6, 'aug.': 7, 'sep.': 8, 'oct.': 9, 'nov.': 10, 'dec.': 11
-                };
-
                 try {
-                    const [dayStr, monthStr, yearStr] = trx.date.split(' ');
-                    const day = parseInt(dayStr);
-                    const month = monthMap[monthStr.toLowerCase()];
-                    const year = parseInt(yearStr);
-
-                    if (!isNaN(day) && month !== undefined && !isNaN(year)) {
-                        const trxDate = new Date(year, month, day);
-                        const start = new Date(customStartDate);
-                        const end = new Date(customEndDate);
-
-                        // Set hours to cover the whole day
-                        start.setHours(0, 0, 0, 0);
-                        end.setHours(23, 59, 59, 999);
-
-                        if (trxDate < start || trxDate > end) {
-                            return false;
-                        }
-                    }
-                } catch (e) {
-                    // If date parsing fails, keep it in the list
-                }
+                    const trxDate = new Date(trx.isoDate);
+                    const start = new Date(customStartDate);
+                    const end = new Date(customEndDate);
+                    start.setHours(0, 0, 0, 0);
+                    end.setHours(23, 59, 59, 999);
+                    if (trxDate < start || trxDate > end) return false;
+                } catch (e) { /* keep */ }
             }
 
             return true;
@@ -222,20 +219,27 @@ export function Transactions() {
                             <h3 className="font-semibold text-muted-foreground uppercase tracking-wider" style={{ fontSize: '12px' }}>Recent</h3>
                         </div>
                         <div className="divide-y divide-border">
-                            {filteredTransactions.map((trx, i) => (
-                                <div key={i} className="p-4 flex items-center justify-between hover:bg-black/5 transition-colors cursor-pointer">
+                            {filteredTransactions.map((trx) => (
+                                <div
+                                    key={trx.id}
+                                    onClick={() => navigate(`/app/transaction/${trx.id}`)}
+                                    className="p-4 flex items-center justify-between hover:bg-black/5 transition-colors cursor-pointer"
+                                >
                                     <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden shrink-0" style={{ background: '#1B2B4B08', border: '1px solid #1B2B4B15', fontSize: '20px' }}>
-                                            <div className="w-full h-full flex items-center justify-center">{trx.icon}</div>
+                                        <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden shrink-0" style={{ background: '#1B2B4B08', border: '1px solid #1B2B4B15' }}>
+                                            {trx.icon}
                                         </div>
                                         <div>
                                             <div className="font-semibold text-[#1B2B4B]" style={{ fontSize: '14px' }}>{trx.title}</div>
                                             <div className="text-muted-foreground truncate max-w-[200px] sm:max-w-xs" style={{ fontSize: '12px' }}>{trx.desc}</div>
                                         </div>
                                     </div>
-                                    <div className="text-right shrink-0 ml-4">
-                                        <div className={`font-bold ${trx.amount.startsWith('+') ? 'text-green-600' : 'text-[#1B2B4B]'} mb-0.5`} style={{ fontSize: '15px' }}>{trx.amount}</div>
-                                        <div className="text-muted-foreground" style={{ fontSize: '12px' }}>{trx.date}</div>
+                                    <div className="flex items-center gap-2 shrink-0 ml-4">
+                                        <div className="text-right">
+                                            <div className="font-bold text-[#1B2B4B] mb-0.5" style={{ fontSize: '15px' }}>{trx.amount}</div>
+                                            <div className="text-muted-foreground" style={{ fontSize: '12px' }}>{trx.date}</div>
+                                        </div>
+                                        <ChevronRight size={16} className="text-muted-foreground" />
                                     </div>
                                 </div>
                             ))}
