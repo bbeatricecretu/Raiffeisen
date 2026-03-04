@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ArrowLeft, MessageSquare, Search, Calendar, Bus, ShoppingCart, Utensils, CreditCard, Zap, Music, Banknote, TrendingUp, Lightbulb, Sparkles, Heart, Dumbbell, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { transactions as mockTransactions } from '../services/mockData';
+import { api } from '../services/api';
 
 // Available colors for categories
 const CATEGORY_COLORS: Record<string, string> = {
@@ -46,17 +47,43 @@ export function Transactions() {
     const [dateRange, setDateRange] = useState('This Month');
     const [customStartDate, setCustomStartDate] = useState('');
     const [customEndDate, setCustomEndDate] = useState('');
+    const [transactionsList, setTransactionsList] = useState<any[]>(mockTransactions);
 
-    const allTransactions = useMemo(() => mockTransactions.map(tx => ({
+    useEffect(() => {
+        const loadTx = async () => {
+             const uid = localStorage.getItem('userId') || 'me';
+             try {
+                 const res = await api.getTransactions(uid);
+                 if (Array.isArray(res) && res.length > 0) {
+                     // transform to match mock structure
+                     const mapped = res.map((r: any) => ({
+                         id: r.id,
+                         merchant: r.merchant_name,
+                         amount: r.amount,
+                         date: r.date,
+                         category: r.category || 'Other',
+                         iban: 'RO49' + r.id.substring(0, 16).toUpperCase(), // Fake IBAN
+                         county: r.county || 'B',
+                     }));
+                     setTransactionsList(mapped);
+                 }
+             } catch (e) {
+                 console.error("Failed to load transactions", e);
+             }
+        };
+        loadTx();
+    }, []);
+
+    const allTransactions = useMemo(() => transactionsList.map(tx => ({
         id: tx.id,
         title: tx.merchant,
         category: tx.category,
-        desc: `${tx.iban} · ${tx.county}`,
+        desc: `${tx.iban || 'RO...'} · ${tx.county || 'B'}`,
         date: new Date(tx.date).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short', year: 'numeric' }),
         isoDate: tx.date,
         amount: `-${tx.amount.toFixed(2)} RON`,
         icon: categoryIcon(tx.category),
-    })), []);
+    })), [transactionsList]);
 
     // Filter transactions
     const filteredTransactions = useMemo(() => {

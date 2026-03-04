@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router';
 import {
   LayoutDashboard, CreditCard, MessageSquare, Map, CheckCircle2,
   Users, UserPlus, Search, Bell, ChevronDown, LogOut, Settings,
   User, Menu, X, TrendingUp, Building2
 } from 'lucide-react';
-import { currentUser } from '../../services/mockData';
+import { currentUser as mockUser } from '../../services/mockData';
 
 const navItems = {
   bank: [
@@ -24,8 +24,55 @@ const navItems = {
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(mockUser);
+  const [pendingCount, setPendingCount] = useState(1);
   const navigate = useNavigate();
-  const location = useLocation();
+
+  useEffect(() => {
+    // Check if demo transaction is pending
+    const checkPending = () => {
+        const isDone = localStorage.getItem('confirmed_ptx1');
+        setPendingCount(isDone ? 0 : 1);
+    };
+    checkPending();
+    window.addEventListener('storage', checkPending);
+
+    const stored = localStorage.getItem('user');
+    if (stored) {
+      try {
+        const u = JSON.parse(stored);
+        setCurrentUser({
+          ...mockUser, // keep fields like avatar if missing
+          name: u.name || mockUser.name,
+          email: u.email || mockUser.email,
+          id: u.id || mockUser.id
+        });
+      } catch (e) {
+        console.error("Failed to parse user", e);
+      }
+    }
+
+    return () => window.removeEventListener('storage', checkPending);
+  }, []);
+
+  const navItems = {
+    bank: [
+      { to: '/app/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/app/chat', icon: MessageSquare, label: 'Smart Chat', badge: 'AI' },
+      { to: '/app/map', icon: Map, label: 'Spending Map' },
+      { to: '/app/confirm', icon: CheckCircle2, label: 'Confirmations', badge: pendingCount > 0 ? pendingCount.toString() : undefined },
+    ],
+    community: [
+      { to: '/app/community/c1', icon: Users, label: 'Community Feed' },
+      { to: '/app/invite', icon: UserPlus, label: 'Invite Friends' },
+      { to: '/app/join', icon: Search, label: 'Join Community' },
+    ],
+  };
+
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate('/auth');
+  };
 
   const getPageTitle = () => {
     const path = location.pathname;
@@ -216,15 +263,24 @@ export function AppLayout() {
                     <div className="text-[12px] text-muted-foreground">{currentUser.email}</div>
                   </div>
                   <div className="p-1">
-                    {[{ icon: User, label: 'My Profile' }, { icon: Settings, label: 'Settings' }, { icon: TrendingUp, label: 'Analytics' }].map(item => (
-                      <button key={item.label} className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors">
-                        <item.icon size={15} className="text-muted-foreground" />
-                        {item.label}
-                      </button>
-                    ))}
+                    <button
+                      onClick={() => navigate('/app/details')}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors"
+                    >
+                      <User size={15} className="text-muted-foreground" />
+                      My Profile
+                    </button>
+                    <button className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors">
+                      <Settings size={15} className="text-muted-foreground" />
+                      Settings
+                    </button>
+                    <button className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors">
+                      <TrendingUp size={15} className="text-muted-foreground" />
+                      Analytics
+                    </button>
                     <div className="my-1 border-t border-border" />
                     <button
-                      onClick={() => navigate('/')}
+                      onClick={handleLogout}
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     >
                       <LogOut size={15} />

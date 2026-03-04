@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X, Filter, TrendingUp, ChevronDown, MapPin } from 'lucide-react';
-import { counties, transactions } from '../services/mockData';
+import { api } from '../services/api';
 
 // Romania bounding box for coordinate conversion
 const MAP_W = 560;
@@ -13,7 +13,7 @@ function latToY(lat: number) { return ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * 
 
 // Spending heat color scale
 function heatColor(spending: number, max: number) {
-  const ratio = spending / max;
+  const ratio = max > 0 ? spending / max : 0;
   if (ratio > 0.7) return '#E53935';
   if (ratio > 0.4) return '#FFD100';
   if (ratio > 0.2) return '#FFD100';
@@ -34,26 +34,46 @@ type FilterState = {
 };
 
 export function SpendingMap() {
-  const [selectedPin, setSelectedPin] = useState<typeof transactions[0] | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [counties, setCounties] = useState<any[]>([]);
+  const [selectedPin, setSelectedPin] = useState<any | null>(null);
   const [filters, setFilters] = useState<FilterState>({ category: 'All', dateRange: 'All time', minAmount: 0, maxAmount: 10000 });
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const maxSpending = Math.max(...counties.map(c => c.spending));
+  useEffect(() => {
+    const uid = localStorage.getItem('user_id') || 'me';
+    
+    api.getSpendingMap(uid).then(setCounties).catch(() => setCounties([]));
+    
+    api.getTransactions(uid).then(txs => {
+      // Enrich with simulated coordinates if missing
+      const enriched = txs.map((t: any) => ({
+        ...t,
+        // If backend doesn't provide lat/lon, simulate based on city hash or random
+        lat: t.lat || (44.5 + (Math.random() - 0.5) * 4), 
+        lon: t.lon || (25.0 + (Math.random() - 0.5) * 5),
+        merchant: t.merchant_name || t.merchant // align fields
+      }));
+      setTransactions(enriched);
+    }).catch(() => setTransactions([]));
+  }, []);
+
+  const maxSpending = counties.length > 0 ? Math.max(...counties.map(c => c.spending)) : 1000;
 
   const filteredTx = useMemo(() => transactions.filter(tx => {
     if (filters.category !== 'All' && tx.category !== filters.category) return false;
     if (tx.amount < filters.minAmount || tx.amount > filters.maxAmount) return false;
     return true;
-  }), [filters]);
+  }), [filters, transactions]);
 
   // Deterministic pin offsets based on tx id
   const pinOffsets = useMemo(() => {
     return transactions.reduce<Record<string, { dx: number; dy: number }>>((acc, tx) => {
-      const hash = tx.id.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+      const hash = tx.id.toString().split('').reduce((s: number, c: string) => s + c.charCodeAt(0), 0);
       acc[tx.id] = { dx: ((hash * 7) % 16) - 8, dy: ((hash * 13) % 16) - 8 };
       return acc;
     }, {});
-  }, []);
+  }, [transactions]);
 
   const topCounties = [...counties].sort((a, b) => b.spending - a.spending).slice(0, 5);
 

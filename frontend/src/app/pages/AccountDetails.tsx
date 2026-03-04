@@ -33,7 +33,7 @@ export function AccountDetails() {
 
     const CORRECT_CODE = '1234';
 
-    const accountData = {
+    const [accountData, setAccountData] = useState({
         type: 'Cont Curent (RON)',
         owner: 'Alexandru Petrescu',
         iban: 'RO49BBBR1831007593840099',
@@ -45,7 +45,20 @@ export function AccountDetails() {
         pin: '****',
         openDate: '15.03.2021',
         branch: 'Sucursala București – Pipera',
-    };
+    });
+
+    useEffect(() => {
+        const stored = localStorage.getItem('user');
+        if (stored) {
+            try {
+                const u = JSON.parse(stored);
+                setAccountData(prev => ({
+                    ...prev,
+                    owner: u.name || prev.owner
+                }));
+            } catch {}
+        }
+    }, []);
 
     const handleUnlock = () => {
         if (securityCode === CORRECT_CODE) {

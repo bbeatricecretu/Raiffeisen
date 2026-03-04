@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Eye, EyeOff, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { api } from '../services/api';
 
 type Mode = 'signup' | 'login';
 
@@ -20,6 +21,7 @@ export function Auth() {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const [fields, setFields] = useState({
     fullName: initialField(),
@@ -63,9 +65,23 @@ export function Auth() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setApiError(null);
     if (mode === 'login') {
       setIsLoading(true);
-      setTimeout(() => { setIsLoading(false); navigate('/app/dashboard'); }, 1200);
+      try {
+        const user = await api.login({
+          email: fields.email.value,
+          password: fields.password.value
+        });
+        localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem('userId', user.id);
+        navigate('/app/dashboard');
+      } catch (e) {
+        console.error(e);
+        setApiError('Invalid credentials');
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
     // Validate all fields
@@ -79,8 +95,28 @@ export function Auth() {
     setFields(newFields);
     if (!acceptTerms) return;
     if (hasErrors) return;
+
     setIsLoading(true);
-    setTimeout(() => { setIsLoading(false); setSubmitted(true); setTimeout(() => navigate('/app/dashboard'), 1500); }, 1400);
+    
+    try {
+      const user = await api.register({
+        name: fields.fullName.value,
+        email: fields.email.value,
+        password: fields.password.value,
+        phone: fields.phone.value
+      });
+      setIsLoading(false);
+      setSubmitted(true);
+      // Store user session
+      localStorage.setItem('user', JSON.stringify(user));
+      if (user.id) localStorage.setItem('userId', user.id);
+      
+      setTimeout(() => navigate('/app/dashboard'), 1500);
+    } catch (err: any) {
+      console.error(err);
+      setIsLoading(false);
+      setApiError(typeof err.message === 'string' ? err.message : "Registration failed. Please try again.");
+    }
   };
 
   const getFieldClass = (field: FieldState) => {

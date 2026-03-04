@@ -76,14 +76,14 @@ class DatabaseClient:
 
     def create_user(self, name: str, password: str,
                     email: str = "", phone: str = "",
-                    iban: str = "", agreed: bool = False) -> Dict[str, Any]:
+                    iban: str = "", balance: float = 0.0, agreed: bool = False) -> Dict[str, Any]:
         uid = _new_id()
         with self._get_connection() as conn:
             conn.execute(
-                "INSERT INTO users (id, name, email, phone, password, iban, agreed) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO users (id, name, email, phone, password, iban, balance, agreed) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (uid, name, email or None, phone or None,
-                 password, iban or None, int(agreed)),
+                 password, iban or None, balance, int(agreed)),
             )
         return self.get_user(uid)
 
@@ -107,6 +107,15 @@ class DatabaseClient:
                 "SELECT * FROM users WHERE phone = ?", (phone,)
             ).fetchone()
         return dict(row) if row else None
+
+    def search_users(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, name, email, phone, career, location FROM users "
+                "WHERE name LIKE ? OR email LIKE ? LIMIT ?",
+                (f"%{query}%", f"%{query}%", limit)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def update_user(self, user_id: str, **fields) -> Optional[Dict[str, Any]]:
         allowed = {"name", "email", "phone", "iban", "agreed"}
@@ -177,6 +186,11 @@ class DatabaseClient:
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (tx_id, user_id, merchant_id, merchant_name, amount, currency,
                  city or None, county or None, date, category or None, raw_pos_string or None),
+            )
+            # Update user balance
+            conn.execute(
+                "UPDATE users SET balance = balance - ? WHERE id = ?",
+                (amount, user_id)
             )
         return self.get_transaction(tx_id)
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Send, ReceiptText, RefreshCw, Users, FileText, Plus,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Cell } from 'recharts';
 import { transactions, spendingByCategory, monthlySpending } from '../services/mockData';
+import { api } from '../services/api';
 
 const categoryColors: Record<string, string> = {
   Groceries: '#FFD100', Food: '#1B2B4B', Fuel: '#000000',
@@ -20,7 +21,23 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('cards');
   const [chatInput, setChatInput] = useState('');
+  const [balance, setBalance] = useState<number>(24851.20);
   const recent = transactions.slice(0, 6);
+
+  useEffect(() => {
+    const fetchBalance = async () => {
+      const uid = localStorage.getItem('userId') || 'me';
+      try {
+        const user = await api.getUser(uid);
+        if (user && user.balance !== undefined) {
+          setBalance(user.balance);
+        }
+      } catch (e) {
+        console.error("Failed to fetch balance", e);
+      }
+    };
+    fetchBalance();
+  }, []);
 
   return (
     <div className="p-6 space-y-6">
@@ -122,7 +139,7 @@ export function Dashboard() {
 
           {/* Balance below card */}
           <div className="text-center">
-            <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '32px' }}>24,851.20 RON</div>
+            <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '32px' }}>{balance.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON</div>
           </div>
 
           {/* Quick Actions - two rows */}
@@ -179,7 +196,7 @@ export function Dashboard() {
               <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 80% 20%, rgba(255,209,0,0.15) 0%, transparent 60%)' }} />
               <div className="relative z-10">
                 <span className="text-white/60" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total Balance</span>
-                <div className="font-bold text-white mt-2" style={{ fontSize: '28px' }}>RON 24,851.20</div>
+                <div className="font-bold text-white mt-2" style={{ fontSize: '28px' }}>RON {balance.toLocaleString('ro-RO', { minimumFractionDigits: 2 })}</div>
                 <div className="flex items-center gap-1.5 mt-2">
                   <TrendingUp size={13} className="text-green-400" />
                   <span className="text-green-400" style={{ fontSize: '12px', fontWeight: 600 }}>+8.3%</span>
