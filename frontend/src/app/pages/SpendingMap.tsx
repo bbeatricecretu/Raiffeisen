@@ -1,19 +1,79 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { X, Filter, TrendingUp, ChevronDown, MapPin } from 'lucide-react';
-import { counties, transactions } from '../services/mockData';
+import { MapContainer, TileLayer, Circle, CircleMarker, Tooltip, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import { api } from '../services/api';
 
-// Romania bounding box for coordinate conversion
-const MAP_W = 560;
-const MAP_H = 400;
-const LON_MIN = 20.2, LON_MAX = 29.7;
-const LAT_MIN = 43.6, LAT_MAX = 48.3;
 
-function lonToX(lon: number) { return ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * MAP_W; }
-function latToY(lat: number) { return ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * MAP_H; }
+// County Coordinates (approximate centroids)
+const COUNTY_COORDS: Record<string, { lat: number, lon: number, name: string }> = {
+    'B': { lat: 44.43, lon: 26.10, name: 'Bucharest' },
+    'CJ': { lat: 46.77, lon: 23.60, name: 'Cluj' },
+    'TM': { lat: 45.75, lon: 21.23, name: 'Timis' },
+    'IS': { lat: 47.16, lon: 27.58, name: 'Iasi' },
+    'BV': { lat: 45.65, lon: 25.60, name: 'Brasov' },
+    'CT': { lat: 44.17, lon: 28.63, name: 'Constanta' },
+    'DJ': { lat: 44.32, lon: 23.80, name: 'Dolj' },
+    'BH': { lat: 47.05, lon: 21.92, name: 'Bihor' },
+    'SB': { lat: 45.80, lon: 24.15, name: 'Sibiu' },
+    'MS': { lat: 46.54, lon: 24.56, name: 'Mures' },
+    'BC': { lat: 46.57, lon: 26.91, name: 'Bacau' },
+    'AG': { lat: 44.86, lon: 24.87, name: 'Arges' },
+    'PH': { lat: 44.93, lon: 26.02, name: 'Prahova' }, // Tweaked slightly
+    'VS': { lat: 46.63, lon: 27.73, name: 'Vaslui' },
+    'GL': { lat: 45.43, lon: 28.03, name: 'Galati' },
+    'TL': { lat: 45.17, lon: 28.80, name: 'Tulcea' },
+    'MM': { lat: 47.66, lon: 23.57, name: 'Maramures' },
+    'SV': { lat: 47.64, lon: 26.25, name: 'Suceava' },
+    'HD': { lat: 45.88, lon: 22.90, name: 'Hunedoara' },
+    'AB': { lat: 46.07, lon: 23.58, name: 'Alba' },
+    'AR': { lat: 46.18, lon: 21.31, name: 'Arad' },
+    'CS': { lat: 45.30, lon: 21.88, name: 'Caras-Severin' },
+    'GJ': { lat: 45.04, lon: 23.27, name: 'Gorj' },
+    'MH': { lat: 44.63, lon: 22.65, name: 'Mehedinti' },
+    'OT': { lat: 44.43, lon: 24.36, name: 'Olt' },
+    'TR': { lat: 43.97, lon: 25.33, name: 'Teleorman' },
+    'GR': { lat: 43.90, lon: 25.96, name: 'Giurgiu' },
+    'CL': { lat: 44.20, lon: 27.33, name: 'Calarasi' },
+    'IL': { lat: 44.56, lon: 27.36, name: 'Ialomita' },
+    'BR': { lat: 45.27, lon: 27.97, name: 'Braila' },
+    'BZ': { lat: 45.15, lon: 26.82, name: 'Buzau' },
+    'VN': { lat: 45.70, lon: 27.18, name: 'Vrancea' },
+    'CV': { lat: 45.87, lon: 26.13, name: 'Covasna' },
+    'HR': { lat: 46.36, lon: 25.30, name: 'Harghita' },
+    'NT': { lat: 46.93, lon: 26.37, name: 'Neamt' },
+    'BT': { lat: 47.75, lon: 26.66, name: 'Botosani' },
+    'SJ': { lat: 47.18, lon: 23.06, name: 'Salaj' },
+    'BN': { lat: 47.13, lon: 24.50, name: 'Bistrita-Nasaud' },
+    'SM': { lat: 47.78, lon: 22.88, name: 'Satu Mare' },
+    'VL': { lat: 45.10, lon: 24.37, name: 'Valcea' },
+    'DB': { lat: 44.93, lon: 25.45, name: 'Dambovita' },
+    'IF': { lat: 44.60, lon: 26.18, name: 'Ilfov' },
+};
+
+// City coordinates for transactions that have city but no county
+const CITY_COORDS: Record<string, { lat: number; lon: number; county: string }> = {
+    'Cluj-Napoca': { lat: 46.77, lon: 23.60, county: 'CJ' },
+    'Cluj': { lat: 46.77, lon: 23.60, county: 'CJ' },
+    'Bucharest': { lat: 44.43, lon: 26.10, county: 'B' },
+    'București': { lat: 44.43, lon: 26.10, county: 'B' },
+    'Timișoara': { lat: 45.75, lon: 21.23, county: 'TM' },
+    'Timisoara': { lat: 45.75, lon: 21.23, county: 'TM' },
+    'Iași': { lat: 47.16, lon: 27.58, county: 'IS' },
+    'Iasi': { lat: 47.16, lon: 27.58, county: 'IS' },
+    'Brașov': { lat: 45.65, lon: 25.60, county: 'BV' },
+    'Brasov': { lat: 45.65, lon: 25.60, county: 'BV' },
+    'Constanța': { lat: 44.17, lon: 28.63, county: 'CT' },
+    'Constanta': { lat: 44.17, lon: 28.63, county: 'CT' },
+    'Craiova': { lat: 44.32, lon: 23.80, county: 'DJ' },
+    'Oradea': { lat: 47.05, lon: 21.92, county: 'BH' },
+    'Sibiu': { lat: 45.80, lon: 24.15, county: 'SB' },
+    'Online': { lat: 46.77, lon: 23.60, county: 'CJ' }, // Default online purchases to user's city
+};
 
 // Spending heat color scale
 function heatColor(spending: number, max: number) {
-  const ratio = spending / max;
+  const ratio = max > 0 ? spending / max : 0;
   if (ratio > 0.7) return '#E53935';
   if (ratio > 0.4) return '#FFD100';
   if (ratio > 0.2) return '#FFD100';
@@ -34,28 +94,84 @@ type FilterState = {
 };
 
 export function SpendingMap() {
-  const [selectedPin, setSelectedPin] = useState<typeof transactions[0] | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  // counties array is now purely derived from filtered transactions
+  // const [counties, setCounties] = useState<any[]>([]); // Removed: derived instead
+  const [selectedPin, setSelectedPin] = useState<any | null>(null);
   const [filters, setFilters] = useState<FilterState>({ category: 'All', dateRange: 'All time', minAmount: 0, maxAmount: 10000 });
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const maxSpending = Math.max(...counties.map(c => c.spending));
-
-  const filteredTx = useMemo(() => transactions.filter(tx => {
-    if (filters.category !== 'All' && tx.category !== filters.category) return false;
-    if (tx.amount < filters.minAmount || tx.amount > filters.maxAmount) return false;
-    return true;
-  }), [filters]);
-
-  // Deterministic pin offsets based on tx id
-  const pinOffsets = useMemo(() => {
-    return transactions.reduce<Record<string, { dx: number; dy: number }>>((acc, tx) => {
-      const hash = tx.id.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
-      acc[tx.id] = { dx: ((hash * 7) % 16) - 8, dy: ((hash * 13) % 16) - 8 };
-      return acc;
-    }, {});
+  useEffect(() => {
+    const uid = localStorage.getItem('userId') || 'me';
+    
+    // Fetch MORE transactions for better filtering
+    api.getTransactions(uid, 1000).then(txs => {
+      // Enrich with simulated coordinates if missing
+      const enriched = txs.map((t: any) => {
+        // Resolve coordinates: county → city → random fallback
+        const countyCoord = t.county && COUNTY_COORDS[t.county] ? COUNTY_COORDS[t.county] : null;
+        const cityCoord = t.city && CITY_COORDS[t.city] ? CITY_COORDS[t.city] : null;
+        const base = countyCoord || cityCoord;
+        return {
+          ...t,
+          lat: base ? (base.lat + (Math.random() - 0.5) * 0.08) : (44.5 + (Math.random() - 0.5) * 4),
+          lon: base ? (base.lon + (Math.random() - 0.5) * 0.08) : (25.0 + (Math.random() - 0.5) * 5),
+          merchant: t.merchant_name || t.merchant
+        };
+      });
+      setTransactions(enriched);
+    }).catch(() => setTransactions([]));
   }, []);
 
-  const topCounties = [...counties].sort((a, b) => b.spending - a.spending).slice(0, 5);
+  const filteredTx = useMemo(() => transactions.filter(tx => {
+    // 1. Amount
+    if (tx.amount < filters.minAmount || tx.amount > filters.maxAmount) return false;
+    
+    // 2. Category
+    if (filters.category !== 'All' && tx.category !== filters.category) return false;
+    
+    // 3. Date Range
+    if (filters.dateRange !== 'All time') {
+      const date = new Date(tx.date);
+      const now = new Date();
+      if (filters.dateRange === 'This month') {
+        if (date.getMonth() !== now.getMonth() || date.getFullYear() !== now.getFullYear()) return false;
+      } else if (filters.dateRange === 'Last 3 months') {
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(now.getMonth() - 3);
+        if (date < threeMonthsAgo) return false;
+      } else if (filters.dateRange === 'This year') {
+        if (date.getFullYear() !== now.getFullYear()) return false;
+      }
+    }
+    return true;
+  }), [filters, transactions]);
+
+    // Aggregate by county
+    const countyData = useMemo(() => {
+        const aggs: Record<string, { id: string, spending: number, txCount: number }> = {};
+        
+        filteredTx.forEach(tx => {
+            if (tx.county) {
+                if (!aggs[tx.county]) aggs[tx.county] = { id: tx.county, spending: 0, txCount: 0 };
+                aggs[tx.county].spending += tx.amount;
+                aggs[tx.county].txCount += 1;
+            }
+        });
+
+        // Convert to array and match with coordinates
+        return Object.values(aggs).map(c => ({
+            ...c,
+            // Attach coordinates from static dict
+            ...COUNTY_COORDS[c.id] || { lat: 46, lon: 25, name: c.id }
+        }));
+
+    }, [filteredTx]);
+
+  const maxSpending = countyData.length > 0 ? Math.max(...countyData.map(c => c.spending)) : 1000;
+
+
+  const topCounties = [...countyData].sort((a, b) => b.spending - a.spending).slice(0, 5);
 
   return (
     <div className="flex h-full" style={{ height: 'calc(100vh - 64px)' }}>
@@ -87,124 +203,84 @@ export function SpendingMap() {
         </div>
 
         {/* Map container */}
-        <div className="flex-1 relative overflow-hidden bg-[#EEF4FF] flex items-center justify-center p-4">
-          <div className="relative" style={{ width: MAP_W, height: MAP_H }}>
-            <svg width={MAP_W} height={MAP_H} viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="absolute inset-0">
-              {/* Romania outline */}
-              <defs>
-                <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="4" stdDeviation="8" floodColor="#1B2B4B" floodOpacity="0.15" />
-                </filter>
-              </defs>
-              <path
-                d="M 95,26 L 226,30 L 332,9 L 421,26 L 421,170 L 437,238 L 500,246 L 500,263 L 447,357 L 442,383 L 384,383 L 300,383 L 116,332 L 0,281 L 0,111 Z"
-                fill="#DBEAFE"
-                stroke="#93C5FD"
-                strokeWidth="2"
-                filter="url(#shadow)"
-              />
+        <div className="flex-1 relative overflow-hidden bg-[#EEF4FF] z-0">
+          <MapContainer center={[46.0, 25.0]} zoom={7} style={{ height: '100%', width: '100%', zIndex: 0 }}>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
 
-              {/* Heatmap blobs for counties */}
-              {counties.map(county => {
-                const cx = lonToX(county.lon);
-                const cy = latToY(county.lat);
-                const r = Math.sqrt(county.spending / maxSpending) * 60 + 20;
-                const color = heatColor(county.spending, maxSpending);
-                return (
-                  <circle
-                    key={county.id}
-                    cx={cx} cy={cy} r={r}
-                    fill={color}
-                    opacity={0.55}
-                    style={{ filter: 'blur(18px)' }}
-                  />
-                );
-              })}
-
-              {/* County label dots */}
-              {counties.map(county => {
-                const cx = lonToX(county.lon);
-                const cy = latToY(county.lat);
-                return (
-                  <g key={`label-${county.id}`}>
-                    <circle cx={cx} cy={cy} r={4} fill={heatColor(county.spending, maxSpending)} stroke="white" strokeWidth={1.5} opacity={0.9} />
-                    <text x={cx} y={cy - 8} textAnchor="middle" fill="#1B2B4B" style={{ fontSize: '9px', fontWeight: 600 }} opacity={0.8}>
-                      {county.id === 'B' ? 'BUC' : county.id}
-                    </text>
-                  </g>
-                );
-              })}
-
-              {/* Transaction pins */}
-              {filteredTx.map(tx => {
-                const offset = pinOffsets[tx.id] || { dx: 0, dy: 0 };
-                const cx = lonToX(tx.lon) + offset.dx;
-                const cy = latToY(tx.lat) + offset.dy;
-                const isSelected = selectedPin?.id === tx.id;
-                return (
-                  <g
-                    key={tx.id}
-                    onClick={() => setSelectedPin(isSelected ? null : tx)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <circle
-                      cx={cx} cy={cy} r={isSelected ? 10 : 7}
-                      fill={isSelected ? '#1B2B4B' : '#FFD100'}
-                      stroke={isSelected ? '#FFD100' : '#1B2B4B'}
-                      strokeWidth={isSelected ? 2 : 1.5}
-                      style={{ transition: 'all 0.15s', filter: isSelected ? 'drop-shadow(0 2px 4px rgba(27,43,75,0.4))' : 'none' }}
-                    />
-                    <text x={cx} y={cy + 4} textAnchor="middle" fill={isSelected ? '#FFD100' : '#1B2B4B'} style={{ fontSize: '8px', fontWeight: 700, pointerEvents: 'none' }}>
-                      {categoryIcons[tx.category] ? '' : '•'}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-
-            {/* Pin popup */}
-            {selectedPin && (() => {
-              const cx = lonToX(selectedPin.lon);
-              const cy = latToY(selectedPin.lat);
-              const popX = cx > MAP_W * 0.6 ? cx - 230 : cx + 15;
-              const popY = Math.max(10, Math.min(cy - 60, MAP_H - 200));
+            {/* Heatmap circles */}
+            {countyData.map(county => {
+              const r = Math.sqrt(county.spending / maxSpending) * 30000 + 10000;
+              const color = heatColor(county.spending, maxSpending);
               return (
-                <div
-                  className="absolute bg-white rounded-2xl shadow-2xl border border-border p-4 z-10"
-                  style={{ left: popX, top: popY, width: 220 }}
+                <Circle
+                  key={county.id}
+                  center={[county.lat, county.lon]}
+                  radius={r}
+                  pathOptions={{ fillColor: color, color: color, fillOpacity: 0.4, stroke: false }}
                 >
-                  <button onClick={() => setSelectedPin(null)} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground">
-                    <X size={14} />
-                  </button>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[16px]" style={{ background: '#F0F4FF' }}>
-                      {categoryIcons[selectedPin.category] || '💳'}
-                    </div>
-                    <div>
-                      <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '13px' }}>{selectedPin.merchant}</div>
-                      <div className="text-muted-foreground" style={{ fontSize: '10px' }}>{selectedPin.category} · {selectedPin.county}</div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    {[
-                      { label: 'Amount', value: `RON ${selectedPin.amount.toFixed(2)}` },
-                      { label: 'Date', value: selectedPin.date },
-                      { label: 'Total Spent', value: `RON ${selectedPin.totalAtMerchant.toLocaleString()}` },
-                      { label: 'Visits', value: `${selectedPin.visitCount}x` },
-                    ].map(item => (
-                      <div key={item.label} className="bg-muted/60 rounded-lg p-2">
-                        <div className="text-muted-foreground" style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase' }}>{item.label}</div>
-                        <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '12px' }}>{item.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="text-muted-foreground" style={{ fontSize: '10px' }}>
-                    IBAN: <span className="font-mono text-[#1B2B4B]">{selectedPin.iban.slice(0, 14)}...</span>
-                  </div>
-                </div>
+                  <Tooltip direction="center" offset={[0, 0]} opacity={0.7} permanent>
+                    <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#333' }}>{Math.round(county.spending)} RON</span>
+                  </Tooltip>
+                </Circle>
               );
-            })()}
-          </div>
+            })}
+
+            {/* Transaction markers */}
+            {filteredTx.map(tx => {
+              const isSelected = selectedPin?.id === tx.id;
+              return (
+                <CircleMarker
+                  key={tx.id}
+                  center={[tx.lat, tx.lon]}
+                  radius={isSelected ? 8 : 5}
+                  pathOptions={{
+                    fillColor: isSelected ? '#1B2B4B' : '#FFD100',
+                    color: isSelected ? '#FFD100' : '#1B2B4B',
+                    weight: isSelected ? 2 : 1,
+                    fillOpacity: 1
+                  }}
+                  eventHandlers={{
+                    click: () => setSelectedPin(isSelected ? null : tx),
+                  }}
+                >
+                  {isSelected && (
+                    <Popup eventHandlers={{ remove: () => setSelectedPin(null) }}>
+                      <div className="min-w-[200px]">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[16px]" style={{ background: '#F0F4FF' }}>
+                            {categoryIcons[tx.category] || '💳'}
+                          </div>
+                          <div>
+                            <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '13px' }}>{tx.merchant}</div>
+                            <div className="text-muted-foreground" style={{ fontSize: '10px' }}>{tx.category} · {tx.county}</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          {[
+                            { label: 'Amount', value: `RON ${tx.amount.toFixed(2)}` },
+                            { label: 'Date', value: tx.date },
+                            { label: 'Total Spent', value: `RON ${(tx.totalAtMerchant || 0).toLocaleString()}` },
+                            { label: 'Visits', value: `${tx.visitCount || 1}x` },
+                          ].map(item => (
+                            <div key={item.label} className="bg-muted/60 rounded-lg p-2">
+                              <div className="text-muted-foreground" style={{ fontSize: '9px', fontWeight: 600, textTransform: 'uppercase' }}>{item.label}</div>
+                              <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '12px' }}>{item.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="text-muted-foreground" style={{ fontSize: '10px' }}>
+                          IBAN: <span className="font-mono text-[#1B2B4B]">{tx.iban?.slice(0, 14)}...</span>
+                        </div>
+                      </div>
+                    </Popup>
+                  )}
+                </CircleMarker>
+              );
+            })}
+          </MapContainer>
         </div>
       </div>
 

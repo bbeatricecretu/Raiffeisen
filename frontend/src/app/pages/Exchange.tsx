@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowDownUp, RefreshCw, TrendingUp, TrendingDown, Info, Check } from 'lucide-react';
+import { api } from '../services/api';
 
 const currencies = [
     { code: 'RON', name: 'Romanian Leu', flag: 'https://flagcdn.com/w40/ro.png' },
@@ -27,9 +28,31 @@ export function Exchange() {
     const [exchangeComplete, setExchangeComplete] = useState(false);
     const [fromOpen, setFromOpen] = useState(false);
     const [toOpen, setToOpen] = useState(false);
+    const [balances, setBalances] = useState<Record<string, number>>({});
+
+    useEffect(() => {
+        const fetchBal = async () => {
+            const uid = localStorage.getItem('userId');
+            if(uid) {
+                try {
+                   const u = await api.getUser(uid);
+                   setBalances({
+                       RON: u.balance,
+                       EUR: u.balance_eur || 0,
+                       USD: u.balance_usd || 0,
+                       GBP: u.balance_gbp || 0,
+                       CHF: u.balance_chf || 0,
+                       HUF: u.balance_huf || 0
+                   });
+                } catch(e) {}
+            }
+        };
+        fetchBal();
+    }, [exchangeComplete]);
 
     const CurrencySelect = ({ value, onChange, open, setOpen, closeOther }: { value: string; onChange: (v: string) => void; open: boolean; setOpen: (v: boolean) => void; closeOther: () => void }) => {
         const selected = currencies.find(c => c.code === value)!;
+        const bal = balances[value] !== undefined ? balances[value].toFixed(2) : '0.00';
         return (
             <div className="relative" style={{ width: '260px' }}>
                 <button
@@ -39,7 +62,10 @@ export function Exchange() {
                     style={{ fontSize: '14px' }}
                 >
                     <img src={selected.flag} alt={selected.code} className="w-6 h-4 object-cover rounded-sm shrink-0" />
-                    <span className="truncate">{selected.code} — {selected.name}</span>
+                    <div className="flex flex-col items-start truncate overflow-hidden">
+                        <span>{selected.code} — {selected.name}</span>
+                        <span className="text-xs text-muted-foreground font-normal">Bal: {bal}</span>
+                    </div>
                     <svg className="w-4 h-4 ml-auto shrink-0 text-[#1B2B4B]/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                 </button>
                 {open && (
@@ -53,8 +79,13 @@ export function Exchange() {
                                 style={{ fontSize: '14px' }}
                             >
                                 <img src={c.flag} alt={c.code} className="w-6 h-4 object-cover rounded-sm shrink-0" />
-                                <span className="font-semibold text-[#1B2B4B]">{c.code}</span>
-                                <span className="text-muted-foreground">{c.name}</span>
+                                <div className="flex flex-col">
+                                    <span className="font-semibold text-[#1B2B4B]">{c.code}</span>
+                                    <span className="text-muted-foreground text-xs">{c.name}</span>
+                                </div>
+                                <span className="ml-auto text-xs font-mono font-medium">
+                                    {(balances[c.code] || 0).toFixed(2)}
+                                </span>
                             </button>
                         ))}
                     </div>
@@ -71,13 +102,20 @@ export function Exchange() {
         setToCurrency(fromCurrency);
     };
 
-    const handleExchange = () => {
+    const handleExchange = async () => {
         setExchanging(true);
-        setTimeout(() => {
+        const uid = localStorage.getItem('userId');
+        try {
+            if(!uid) throw new Error("Not logged in");
+            await api.exchange(uid, fromCurrency, toCurrency, parseFloat(amount));
+            
             setExchanging(false);
             setExchangeComplete(true);
             setTimeout(() => setExchangeComplete(false), 4000);
-        }, 2000);
+        } catch(e) {
+            alert("Exchange failed: " + e);
+            setExchanging(false);
+        }
     };
 
     const popularPairs = [

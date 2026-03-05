@@ -11,6 +11,7 @@ After seeding, you can immediately test ai_service.py against real rows.
 """
 
 import sys
+import uuid
 from pathlib import Path
 
 # Allow running this script directly from any working directory
@@ -22,9 +23,17 @@ from src.database.database_client import DatabaseClient
 # Seed data
 # ──────────────────────────────────────────────────────────────────────────────
 
-MOCK_USERS = [
-    {"name": "Andrei Pop",    "email": "andrei.pop@example.ro"},
-    {"name": "Maria Ionescu", "email": "maria.ionescu@example.ro"},
+MOCK_USERS = [    {"name": "Maria Ionescu", "email": "maria.ionescu@example.ro"},]
+
+
+MOCK_TEAMS = [
+    {"name": "Tech Entrepreneurs", "created_by": "me", "code": "TECH2024", "image_url": "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=400&h=200&fit=crop"},
+    {"name": "Investors Club", "created_by": "me", "code": "INVEST24", "image_url": "https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=400&h=200&fit=crop"},
+]
+
+MOCK_POSTS = [
+    {"team_code": "TECH2024", "user_email": "alex.petrescu@email.com", "title": "Welcome all!", "text": "Excited to launch this community! Let's build great things."},
+    {"team_code": "INVEST24", "user_email": "alex.petrescu@email.com", "title": "Market Outlook", "text": "Q3 results are looking promising for tech stocks."},
 ]
 
 # Pre-normalized merchants (as if AIService.normalize_merchant() already ran)
@@ -183,18 +192,55 @@ MOCK_TRANSACTIONS = [
 def seed(db: DatabaseClient) -> None:
     print("🌱  Starting database seed...\n")
 
+    initial_balances = {
+        "andrei.pop@example.ro": 12500.50,
+        "maria.ionescu@example.ro": 8340.20,
+        "alex.petrescu@email.com": 24851.20,
+        "soniatestacc11@gmail.com": 10000.00
+    }
+
     # ── 1. Users ──────────────────────────────────────────────────────────
-    user_map: dict[str, str] = {}  # email → id
+    user_map = {}  # email → id
 
     for u in MOCK_USERS:
-        existing = db.get_user_by_email(u["email"])
+        # Check if user exists
+        with db._get_connection() as conn:
+            # Handle special 'me' ID case 
+            if u.get("id") == "me":
+                existing = conn.execute("SELECT * FROM users WHERE id = 'me'").fetchone()
+            else:
+                existing = conn.execute("SELECT * FROM users WHERE email = ?", (u["email"],)).fetchone()
+
         if existing:
-            print(f"     User already exists: {u['email']}")
-            user_map[u["email"]] = existing["id"]
+            uid = existing["id"]
+            print(f"     User already exists: {u['name']} ({uid})")
+            user_map[u["email"]] = uid
+            # Ensure balance is correct if null
+            if 'balance' not in existing or existing['balance'] is None:
+                 balance = initial_balances.get(u["email"], 2500.0)
+                 with db._get_connection() as conn:
+                     conn.execute("UPDATE users SET balance = ? WHERE id = ?", (balance, uid))
         else:
-            created = db.create_user(u["name"], u["email"])
-            user_map[u["email"]] = created["id"]
-            print(f"     Created user: {u['name']} → {created['id']}")
+            balance = initial_balances.get(u["email"], 2500.0)
+            if u.get("id") == "me":
+                uid = "me"
+                with db._get_connection() as conn:
+                    conn.execute(
+                        "INSERT INTO users (id, name, email, password, balance, agreed) VALUES (?, ?, ?, ?, ?, 1)",
+                        (uid, u["name"], u["email"], "password", balance)
+                    )
+                print(f"     User manually created: {u['name']} ({uid})")
+                user_map[u["email"]] = uid
+            else:
+                new_u = db.create_user(
+                    name=u["name"], 
+                    email=u["email"], 
+                    password="password",
+                    balance=balance,
+                    agreed=True
+                )
+                print(f"     User created: {u['name']} ({new_u['id']})")
+                user_map[u["email"]] = new_u['id']
 
     # ── 2. Merchants ──────────────────────────────────────────────────────
     merchant_map: dict[str, str] = {}  # canonical_name → id
@@ -217,15 +263,61 @@ def seed(db: DatabaseClient) -> None:
             date           = tx["date"],
             raw_pos_string = tx["raw_pos_string"],
             currency       = tx.get("currency", "RON"),
-            location       = tx.get("location", ""),
+            city           = tx.get("location", ""),
             category       = tx.get("category", ""),
             merchant_id    = merchant_id,
         )
         print(f"     Transaction: {tx['merchant_name']:15s} {tx['amount']:8.2f} RON  ({tx['date'][:10]})")
 
-    # ── 4. Summary ────────────────────────────────────────────────────────
+    # ── 4. Teams ────────────────────────────────────────────────────────
+    print()
+    team_map = {} # code -> id
+    
+    for team in MOCK_TEAMS:
+        # Check if team exists
+        existing_team = None
+        with db._get_connection() as conn:
+            existing_team = conn.execute("SELECT * FROM teams WHERE code = ?", (team["code"],)).fetchone()
+            
+        if existing_team:
+            print(f"     Team exists: {team['name']} ({existing_team['code']})")
+            team_map[team["code"]] = existing_team["id"]
+        else:
+            # Create (with manual code setting to match our mocks)
+            creator_id = user_map.get(team.get("user_email")) or "me"
+            
+            # Use raw sql to force specific code
+            team_id = str(uuid.uuid4())
+            with db._get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO teams (id, name, code, image_url, created_by) VALUES (?, ?, ?, ?, ?)",
+                    (team_id, team["name"], team["code"], team["image_url"], creator_id)
+                )
+                conn.execute(
+                    "INSERT INTO team_members (user_id, team_id, role) VALUES (?, ?, 'admin')",
+                    (creator_id, team_id)
+                )
+            print(f"     Created team: {team['name']} → {team['code']}")
+            team_map[team["code"]] = team_id
+
+    # ── 5. Posts ────────────────────────────────────────────────────────
+    print()
+    for post in MOCK_POSTS:
+        team_id = team_map.get(post["team_code"])
+        user_id = user_map.get(post["user_email"]) or "me"
+        
+        if team_id and user_id:
+            # Check if post exists (simple check)
+            # Actually create_post generates ID, duplicate checks harder. 
+            # Just create it to show content.
+            p = db.create_post(team_id, user_id, title=post["title"], text=post["text"])
+            print(f"     Post created within {post['team_code']}")
+
+    # ── 6. Summary ────────────────────────────────────────────────________
     health = db.health_check()
     print(f"\n  Seed complete. Row counts: {health['row_counts']}\n")
+
+import uuid
 
 
 # ──────────────────────────────────────────────────────────────────────────────

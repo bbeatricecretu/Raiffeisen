@@ -16,6 +16,7 @@ import { SendMoney } from './pages/SendMoney';
 import { Transactions } from './pages/Transactions';
 import { MerchantDetails } from './pages/MerchantDetails';
 import { TransactionDetails } from './pages/TransactionDetails';
+import { Admin } from './pages/Admin';
 
 export const router = createBrowserRouter([
   {
@@ -29,6 +30,10 @@ export const router = createBrowserRouter([
   {
     path: '/auth',
     element: <Auth />,
+  },
+  {
+    path: '/admin',
+    element: <Admin />,
   },
   {
     path: '/app',

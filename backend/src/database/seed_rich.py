@@ -62,6 +62,16 @@ def T(email, merchant, amount, dt, pos, loc="Cluj-Napoca", cat="other"):
     return {"user_email": email, "merchant_name": merchant, "amount": amount,
             "date": dt, "raw_pos_string": pos, "location": loc, "category": cat}
 
+CITY_TO_COUNTY = {
+    "Cluj-Napoca": "CJ", "Cluj": "CJ", "Online": "CJ",
+    "Bucharest": "B", "București": "B",
+    "Timișoara": "TM", "Timisoara": "TM",
+    "Iași": "IS", "Iasi": "IS",
+    "Brașov": "BV", "Brasov": "BV",
+    "Constanța": "CT", "Constanta": "CT",
+    "Craiova": "DJ", "Oradea": "BH", "Sibiu": "SB",
+}
+
 A = "alex.popescu@student.ubbcluj.ro"
 M = "maria.ionescu@student.ubbcluj.ro"
 R = "radu.moldovan@student.utcluj.ro"
@@ -126,6 +136,7 @@ MERCHANTS = [
     {"canonical_name": "Kaufland",            "merchant_type": "retail",        "confidence": 0.97},
     {"canonical_name": "Mega Image",          "merchant_type": "retail",        "confidence": 0.95},
     {"canonical_name": "Lidl",                "merchant_type": "retail",        "confidence": 0.97},
+    {"canonical_name": "Carrefour",           "merchant_type": "retail",        "confidence": 0.96},
     {"canonical_name": "Penny",               "merchant_type": "retail",        "confidence": 0.94},
     {"canonical_name": "eMag",                "merchant_type": "retail",        "confidence": 0.98},
     {"canonical_name": "H&M",                 "merchant_type": "retail",        "confidence": 0.96},
@@ -822,6 +833,11 @@ TRANSACTIONS = [
     T(R,"Enel",          203.20,"2026-02-20T00:00:00","ENEL ENERGIE RO",              cat="service"),
     T(R,"Digi",           59.99,"2026-02-20T00:01:00","DIGI ROMANIA",                 cat="service"),
     T(R,"OMV",           243.00,"2026-02-22T17:00:00","OMV CLUJ DN1",                 cat="gas"),
+    
+    # ── CARREFOUR BANEASA ──────────────────────────────────────────────
+    T(M,"Carrefour Baneasa", 215.30,"2026-02-10T14:00:00","CARREFOUR BANEASA", cat="retail"),
+    T(M,"Carrefour Baneasa", 168.90,"2026-02-24T18:30:00","CARREFOUR BANEASA", cat="retail"),
+    T(M,"Carrefour Baneasa", 312.75,"2026-03-03T11:00:00","CARREFOUR BANEASA", cat="retail"),
 ]
 
 
@@ -840,27 +856,25 @@ def seed(db: DatabaseClient) -> None:
             print(f"     User exists: {u['email']}")
             user_map[u["email"]] = existing["id"]
         else:
-            created = db.create_user(u["name"], u["email"],
-                                     university=u["university"],
-                                     study_year=u["study_year"])
+            created = db.create_user(u["name"], "password123", email=u["email"])
             user_map[u["email"]] = created["id"]
             print(f"   ✅  User: {u['name']} → {created['id']}")
 
-    # 2. Income sources with history
-    print("\n     Adding income source history...")
-    income_id_map: dict[tuple, str] = {}  # (email, type, started) → id
-    for email, sources in INCOME_HISTORY.items():
-        uid = user_map[email]
-        for (stype, amount, started, ended, employer, notes) in sources:
-            src = db.add_income_source(uid, stype, amount, started,
-                                       employer=employer, notes=notes)
-            if ended:
-                db.end_income_source(src["id"], ended)
-                status = f"ended {ended}"
-            else:
-                status = "active"
-            print(f"     {email.split('@')[0]:15s} | {stype:20s} | "
-                  f"{amount:6.0f} RON/mo | {started} → {status}")
+    # 2. Income sources with history (DISABLED - method missing)
+    print("\n     Skipping income sources (not implemented yet)...")
+    # income_id_map: dict[tuple, str] = {}  # (email, type, started) → id
+    # for email, sources in INCOME_HISTORY.items():
+    #     uid = user_map[email]
+    #     for (stype, amount, started, ended, employer, notes) in sources:
+    #         src = db.add_income_source(uid, stype, amount, started,
+    #                                    employer=employer, notes=notes)
+    #         if ended:
+    #             db.end_income_source(src["id"], ended)
+    #             status = f"ended {ended}"
+    #         else:
+    #             status = "active"
+    #         print(f"     {email.split('@')[0]:15s} | {stype:20s} | "
+    #               f"{amount:6.0f} RON/mo | {started} → {status}")
 
     # 3. Merchants
     print("\n     Upserting merchants...")
@@ -882,31 +896,32 @@ def seed(db: DatabaseClient) -> None:
             amount         = tx["amount"],
             date           = tx["date"],
             raw_pos_string = tx["raw_pos_string"],
-            location       = tx.get("location", "Cluj-Napoca"),
+            city           = tx.get("location", "Cluj-Napoca"),
+            county         = CITY_TO_COUNTY.get(tx.get("location", "Cluj-Napoca"), ""),
             category       = tx.get("category", "other"),
             merchant_id    = mid,
         )
         count += 1
     print(f"     {count} transactions inserted")
 
-    # 5. Financial snapshots for every month
-    print("\n     Calculating monthly financial snapshots...")
+    # 5. Financial snapshots for every month (DISABLED)
+    print("\n     Skipping financial snapshots (method missing)...")
     months = []
-    for year in range(2024, 2027):
-        for month in range(1, 13):
-            m = f"{year}-{month:02d}"
-            if m > "2026-02":
-                break
-            months.append(m)
+    # for year in range(2024, 2027):
+    #     for month in range(1, 13):
+    #         m = f"{year}-{month:02d}"
+    #         if m > "2026-02":
+    #             break
+    #         months.append(m)
 
-    for email, uid in user_map.items():
-        for month in months:
-            snap = db.upsert_financial_snapshot(uid, month)
-            if snap["total_spent"] > 0 or snap["total_income"] > 0:
-                print(f"     {email.split('@')[0]:15s} | {month} | "
-                      f"income: {snap['total_income']:7.0f} | "
-                      f"spent: {snap['total_spent']:7.2f} | "
-                      f"saved: {snap['saved']:+8.2f}")
+    # for email, uid in user_map.items():
+    #     for month in months:
+    #         snap = db.upsert_financial_snapshot(uid, month)
+    #         if snap["total_spent"] > 0 or snap["total_income"] > 0:
+    #             print(f"     {email.split('@')[0]:15s} | {month} | "
+    #                   f"income: {snap['total_income']:7.0f} | "
+    #                   f"spent: {snap['total_spent']:7.2f} | "
+    #                   f"saved: {snap['saved']:+8.2f}")
 
     # 6. Summary
     health = db.health_check()

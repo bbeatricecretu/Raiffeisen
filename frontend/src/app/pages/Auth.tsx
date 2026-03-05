@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Eye, EyeOff, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { api } from '../services/api';
 
 type Mode = 'signup' | 'login';
 
@@ -20,6 +21,7 @@ export function Auth() {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const [fields, setFields] = useState({
     fullName: initialField(),
@@ -63,9 +65,23 @@ export function Auth() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setApiError(null);
     if (mode === 'login') {
       setIsLoading(true);
-      setTimeout(() => { setIsLoading(false); navigate('/app/dashboard'); }, 1200);
+      try {
+        const user = await api.login({
+          email: fields.email.value,
+          password: fields.password.value
+        });
+        localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem('userId', user.id);
+        navigate('/app/dashboard');
+      } catch (e) {
+        console.error(e);
+        setApiError('Invalid credentials');
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
     // Validate all fields
@@ -79,8 +95,28 @@ export function Auth() {
     setFields(newFields);
     if (!acceptTerms) return;
     if (hasErrors) return;
+
     setIsLoading(true);
-    setTimeout(() => { setIsLoading(false); setSubmitted(true); setTimeout(() => navigate('/app/dashboard'), 1500); }, 1400);
+    
+    try {
+      const user = await api.register({
+        name: fields.fullName.value,
+        email: fields.email.value,
+        password: fields.password.value,
+        phone: fields.phone.value
+      });
+      setIsLoading(false);
+      setSubmitted(true);
+      // Store user session
+      localStorage.setItem('user', JSON.stringify(user));
+      if (user.id) localStorage.setItem('userId', user.id);
+      
+      setTimeout(() => navigate('/app/dashboard'), 1500);
+    } catch (err: any) {
+      console.error(err);
+      setIsLoading(false);
+      setApiError(typeof err.message === 'string' ? err.message : "Registration failed. Please try again.");
+    }
   };
 
   const getFieldClass = (field: FieldState) => {
@@ -186,7 +222,7 @@ export function Auth() {
             {mode === 'signup' ? 'Fill in your details to get started' : 'Sign in to your Connect & Grow account'}
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete={mode === 'signup' ? 'off' : 'on'}>
             {mode === 'signup' && (
               <>
                 {/* Full Name */}
@@ -195,6 +231,8 @@ export function Auth() {
                   <div className="relative">
                     <input
                       type="text"
+                      name="fullName"
+                      autoComplete="off"
                       placeholder="Alexandru Petrescu"
                       value={fields.fullName.value}
                       onChange={e => updateField('fullName', e.target.value)}
@@ -220,6 +258,8 @@ export function Auth() {
               <div className="relative">
                 <input
                   type="email"
+                  name="email"
+                  autoComplete={mode === 'signup' ? 'off' : 'email'}
                   placeholder="alex@email.com"
                   value={fields.email.value}
                   onChange={e => updateField('email', e.target.value)}
@@ -243,6 +283,8 @@ export function Auth() {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   placeholder="Min. 8 characters, 1 uppercase"
                   value={fields.password.value}
                   onChange={e => updateField('password', e.target.value)}
@@ -278,6 +320,8 @@ export function Auth() {
                   <div className="relative">
                     <input
                       type="text"
+                      name="career"
+                      autoComplete="off"
                       placeholder="e.g. Software Engineer, Financial Analyst"
                       value={fields.career.value}
                       onChange={e => updateField('career', e.target.value)}
@@ -301,6 +345,8 @@ export function Auth() {
                   <div className="relative">
                     <input
                       type="tel"
+                      name="phone"
+                      autoComplete="off"
                       placeholder="+40 7XX XXX XXX"
                       value={fields.phone.value}
                       onChange={e => updateField('phone', e.target.value)}

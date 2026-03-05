@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ArrowLeft, MessageSquare, Search, Calendar, Bus, ShoppingCart, Utensils, CreditCard, Zap, Music, Banknote, TrendingUp, Lightbulb, Sparkles, Heart, Dumbbell, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { transactions as mockTransactions } from '../services/mockData';
+import { api } from '../services/api';
 
 // Available colors for categories
 const CATEGORY_COLORS: Record<string, string> = {
@@ -46,17 +47,45 @@ export function Transactions() {
     const [dateRange, setDateRange] = useState('This Month');
     const [customStartDate, setCustomStartDate] = useState('');
     const [customEndDate, setCustomEndDate] = useState('');
+    const [transactionsList, setTransactionsList] = useState<any[]>(mockTransactions);
 
-    const allTransactions = useMemo(() => mockTransactions.map(tx => ({
+    useEffect(() => {
+        const loadTx = async () => {
+             const uid = localStorage.getItem('userId') || 'me';
+             try {
+                 const res = await api.getTransactions(uid);
+                 if (Array.isArray(res) && res.length > 0) {
+                     // transform to match mock structure
+                     const mapped = res.map((r: any) => ({
+                         id: r.id,
+                         merchant: r.merchant_name,
+                         amount: r.amount,
+                         date: r.date,
+                         category: r.category || 'Other',
+                         iban: 'RO49' + r.id.substring(0, 16).toUpperCase(), // Fake IBAN
+                         county: r.county || 'B',
+                         // Ensure ISO format for reliable Date parsing
+                         isoDate: r.date.includes('T') ? r.date : r.date.replace(' ', 'T'),
+                     }));
+                     setTransactionsList(mapped);
+                 }
+             } catch (e) {
+                 console.error("Failed to load transactions", e);
+             }
+        };
+        loadTx();
+    }, []);
+
+    const allTransactions = useMemo(() => transactionsList.map(tx => ({
         id: tx.id,
         title: tx.merchant,
         category: tx.category,
-        desc: `${tx.iban} · ${tx.county}`,
+        desc: `${tx.iban || 'RO...'} · ${tx.county || 'B'}`,
         date: new Date(tx.date).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short', year: 'numeric' }),
         isoDate: tx.date,
         amount: `-${tx.amount.toFixed(2)} RON`,
         icon: categoryIcon(tx.category),
-    })), []);
+    })), [transactionsList]);
 
     // Filter transactions
     const filteredTransactions = useMemo(() => {
@@ -72,15 +101,32 @@ export function Transactions() {
             }
 
             // Apply date filter
-            if (dateRange === 'Custom Range' && customStartDate && customEndDate) {
-                try {
-                    const trxDate = new Date(trx.isoDate);
-                    const start = new Date(customStartDate);
-                    const end = new Date(customEndDate);
-                    start.setHours(0, 0, 0, 0);
-                    end.setHours(23, 59, 59, 999);
-                    if (trxDate < start || trxDate > end) return false;
-                } catch (e) { /* keep */ }
+            if (dateRange !== 'All Time') { // Assuming 'All' might be default or just these specific keys
+                const trxDate = new Date(trx.isoDate);
+                const now = new Date();
+                
+                if (dateRange === 'Today') {
+                    if (trxDate.toDateString() !== now.toDateString()) return false;
+                } else if (dateRange === 'Last 7 Days') {
+                    const sevenDaysAgo = new Date();
+                    sevenDaysAgo.setDate(now.getDate() - 7);
+                    sevenDaysAgo.setHours(0, 0, 0, 0);
+                    if (trxDate < sevenDaysAgo) return false;
+                } else if (dateRange === 'This Month') {
+                   if (trxDate.getMonth() !== now.getMonth() || trxDate.getFullYear() !== now.getFullYear()) return false;
+                } else if (dateRange === 'Last Month') {
+                   // robustly get previous month
+                   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                   if (trxDate.getMonth() !== lastMonthDate.getMonth() || trxDate.getFullYear() !== lastMonthDate.getFullYear()) return false;
+                } else if (dateRange === 'Custom Range' && customStartDate && customEndDate) {
+                    try {
+                        const start = new Date(customStartDate);
+                        const end = new Date(customEndDate);
+                        start.setHours(0, 0, 0, 0);
+                        end.setHours(23, 59, 59, 999);
+                        if (trxDate < start || trxDate > end) return false;
+                    } catch (e) { /* keep */ }
+                }
             }
 
             return true;

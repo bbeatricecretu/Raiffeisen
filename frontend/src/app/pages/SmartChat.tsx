@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { ArrowRight, Bot } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { initialChatMessages, currentUser, spendingByCategory, type ChatMessage } from '../services/mockData';
+import { initialChatMessages, currentUser, spendingByCategory, transactions as mockTransactions, type ChatMessage } from '../services/mockData';
+import { api } from '../services/api';
 
 const subData = [
   { name: 'Netflix', amount: 52.99, frequency: 'Monthly' },
@@ -74,16 +75,46 @@ function AiResponseCard({ data }: { data: ChatMessage['data'] }) {
 
 export function SmartChat() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
+  const [currentUserData, setCurrentUserData] = useState(currentUser);
+  const [realTransactions, setRealTransactions] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const stored = localStorage.getItem('user');
+    const uid = localStorage.getItem('userId') || 'me';
+    
+    if (stored) {
+      try {
+        const u = JSON.parse(stored);
+        setCurrentUserData(prev => ({ ...prev, name: u.name, id: u.id }));
+      } catch {}
+    }
+
+    // Fetch real transactions for AI analysis
+    api.getTransactions(uid, 1000).then(txs => {
+      const normalized = txs.map((t: any) => ({
+        ...t,
+        merchant: t.merchant_name || t.merchant, // Handle backend field name difference
+        date: t.date?.split(' ')[0] || t.date // Ensure YYYY-MM-DD
+      }));
+      setRealTransactions(normalized);
+    }).catch(err => {
+      console.error("Failed to fetch transactions for AI", err);
+      // Fallback to mock data if API fails
+      setRealTransactions(mockTransactions);
+    });
+  }, []);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = async (text: string) => {
     if (!text.trim()) return;
+    
+    // 1. Add User Message
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`, role: 'user', content: text,
       time: new Date().toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
@@ -91,23 +122,74 @@ export function SmartChat() {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
+
+    try {
+      // 2. Call AI Search to Parse Query
+      const searchRes = await api.search(text);
+
+      let responseText = "Sorry, I couldn't understand that.";
+      let filteredTx: any[] = [];
+      let cardData: any = undefined;
+
+      if (searchRes.status === 'success' && searchRes.parsed_intent) {
+        // 3. Filter Transactions (Client-side logic now uses REAL data)
+        const intent = searchRes.parsed_intent;
+        
+        // Use the large dataset fetched from backend
+        const dataset = realTransactions.length > 0 ? realTransactions : mockTransactions;
+
+        filteredTx = dataset.filter(tx => {
+          // Normalize texts for comparison
+          const merchant = (tx.merchant_name || tx.merchant).toLowerCase();
+          const qMerchant = (intent.merchant_name || '').toLowerCase();
+          
+          let match = true;
+          
+          // Fuzzy merchant match (handle "Carrefour Baneasa" vs "Carrefour")
+          if (qMerchant) {
+            // Check if one contains the other
+            if (!merchant.includes(qMerchant) && !qMerchant.includes(merchant)) {
+               match = false;
+            }
+          }
+          
+          // Approximate location matching
+          if (intent.location && !tx.county?.toLowerCase().includes(intent.location.toLowerCase())) match = false;
+          // Handle nullable category in tx if needed
+          if (intent.category && tx.category && !tx.category.toLowerCase().includes(intent.category.toLowerCase())) match = false;
+          
+          return match;
+        });
+
+        // 4. Format Results with AI
+        const formatRes = await api.formatResults(text, intent, filteredTx);
+        responseText = formatRes.answer_text;
+      } else if (searchRes.status === 'refused') {
+        responseText = searchRes.message || "I cannot answer that question.";
+      }
+
+      // 5. Add AI Response
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: 'ai',
-        content: text.toLowerCase().includes('subscri')
-          ? 'You have 2 active subscriptions totaling **RON 87.98/month**. Netflix (RON 52.99) and Spotify (RON 34.99). You could save RON 1,055.76/year by cancelling both.'
-          : text.toLowerCase().includes('lidl')
-            ? 'You\'ve visited Lidl **18 times** with a total of **RON 2,340** spent. Average transaction: RON 130. Your last visit was Feb 28.'
-            : text.toLowerCase().includes('month') || text.toLowerCase().includes('spend')
-              ? 'In February 2026 you spent **RON 2,816.28** across 15 transactions — **8.3% less** than January. Top category: Shopping (RON 527.50).'
-              : 'I found relevant data for your query. Your spending patterns look healthy! Would you like a detailed breakdown by category or merchant?',
-        time: new Date().toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }),
-        data: text.toLowerCase().includes('subscri') ? 'suggestions' : text.toLowerCase().includes('lidl') ? 'transactions' : text.toLowerCase().includes('month') ? 'chart' : undefined
+        content: responseText,
+        data: cardData,
+        time: new Date().toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
       };
       setMessages(prev => [...prev, aiMsg]);
-    }, 1600);
+
+    } catch (error) {
+      console.error("AI Error:", error);
+      const errorMsg: ChatMessage = {
+        id: `ai-err-${Date.now()}`,
+        role: 'ai',
+        content: "Sorry, I'm having trouble connecting to the AI service right now. Is the backend running?",
+        time: new Date().toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (
@@ -115,7 +197,7 @@ export function SmartChat() {
 
       {/* Heading */}
       <h1 className="font-bold text-[#1B2B4B] mb-8 text-center" style={{ fontSize: '34px', letterSpacing: '-0.5px' }}>
-        Hello, {currentUser.name.split(' ')[0]}!
+        Hello, {currentUserData.name.split(' ')[0]}!
       </h1>
 
       {/* Chat card */}

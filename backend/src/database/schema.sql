@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS users (
     phone       TEXT UNIQUE,
     password    TEXT NOT NULL,
     iban        TEXT,
+    balance     REAL DEFAULT 0.0,
+    balance_eur REAL DEFAULT 0.0,
+    balance_usd REAL DEFAULT 0.0,
+    balance_gbp REAL DEFAULT 0.0,
+    balance_chf REAL DEFAULT 0.0,
+    balance_huf REAL DEFAULT 0.0,
+    career      TEXT,
+    location    TEXT,
     agreed      INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now'))
 );
@@ -87,6 +95,16 @@ CREATE TABLE IF NOT EXISTS comments (
     CHECK (text IS NOT NULL OR emoji IS NOT NULL)
 );
 
+-- CONTACTS  (per-user address book)
+CREATE TABLE IF NOT EXISTS contacts (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    iban        TEXT,
+    phone       TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+
 -- CONVERSATIONS  (direct messages between two users)
 CREATE TABLE IF NOT EXISTS conversations (
     id          TEXT PRIMARY KEY,
@@ -115,3 +133,4 @@ CREATE INDEX IF NOT EXISTS idx_team_members_user        ON team_members(user_id)
 CREATE INDEX IF NOT EXISTS idx_posts_team               ON posts(team_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post            ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation    ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_user             ON contacts(user_id);

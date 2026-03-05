@@ -1,23 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Send, User, Building2, ArrowRight, Lock, Check, ChevronLeft } from 'lucide-react';
-
-const contacts = [
-    { name: 'Maria Ionescu', iban: 'RO12RZBR0000060007654321', phone: '+40 721 123 456' },
-    { name: 'Andrei Popescu', iban: 'RO34INGB0000999904567890', phone: '+40 734 567 890' },
-    { name: 'Elena Dumitrescu', iban: 'RO56BTRL0000120045678901', phone: '+40 745 678 901' },
-    { name: 'SC Digital Solutions SRL', iban: 'RO78RNCB0000089012345678', phone: 'N/A' },
-    { name: 'Ion Gheorghe', iban: 'RO90BRDE0000SV12345678', phone: '+40 756 789 012' },
-];
-
-const accounts = [
-    { label: 'Cont Curent (RON)', iban: 'RO49BBBR1831007593840099', balance: 24851.20 },
-    { label: 'Cont Economii (RON)', iban: 'RO21BBBR1831007593840100', balance: 15420.50 },
-];
+import { api } from '../services/api';
 
 const CORRECT_CODE = '1234';
 
 export function SendMoney() {
+    const [contacts, setContacts] = useState<{ name: string; iban: string; phone: string }[]>([]);
+    const [accounts, setAccounts] = useState([
+        { label: 'Cont Curent (RON)', iban: 'RO49BBBR1831007593840099', balance: 0 },
+        { label: 'Cont Economii (RON)', iban: 'RO21BBBR1831007593840100', balance: 15420.50 },
+    ]);
     const [step, setStep] = useState<'form' | 'overview' | 'code' | 'success'>('form');
+    
+    useEffect(() => {
+        const uid = localStorage.getItem('userId');
+        if (!uid) return;
+        const fetchData = async () => {
+            try {
+                const user = await api.getUser(uid);
+                if (user && typeof user.balance === 'number') {
+                    setAccounts(prev => {
+                        const newAccs = [...prev];
+                        newAccs[0].balance = user.balance;
+                        return newAccs;
+                    });
+                }
+            } catch (e) { console.error("Failed to fetch balance", e); }
+            try {
+                const c = await api.getUserContacts(uid);
+                setContacts(c.map((ct: any) => ({ name: ct.name, iban: ct.iban || '', phone: ct.phone || 'N/A' })));
+            } catch { /* no contacts yet */ }
+        };
+        fetchData();
+    }, []);
+
     const [selectedAccount, setSelectedAccount] = useState(0);
     const [recipientInput, setRecipientInput] = useState('');
     const [showContacts, setShowContacts] = useState(false);
@@ -26,9 +42,9 @@ export function SendMoney() {
     const [securityCode, setSecurityCode] = useState('');
     const [codeError, setCodeError] = useState(false);
     const [sending, setSending] = useState(false);
-    const [balance, setBalance] = useState(accounts[0].balance);
 
     const account = accounts[selectedAccount];
+    const balance = account.balance;
     const parsedAmount = parseFloat(amount || '0');
     const matchedContact = contacts.find(c =>
         c.iban === recipientInput ||
@@ -36,6 +52,9 @@ export function SendMoney() {
     );
 
     const resolvedName = matchedContact ? matchedContact.name : (recipientInput.length >= 10 ? 'Unknown Recipient' : '');
+    // If we have an exact contact, send name. If unknown, send the raw input (might be IBAN/Phone) so backend can resolve it.
+    const merchantPayload = matchedContact ? matchedContact.name : recipientInput;
+
     const canProceed = recipientInput.trim().length >= 10 && parsedAmount > 0 && parsedAmount <= balance;
 
     const handleSelectContact = (contact: typeof contacts[0]) => {
@@ -43,15 +62,37 @@ export function SendMoney() {
         setShowContacts(false);
     };
 
-    const handleVerifyCode = () => {
+    const handleVerifyCode = async () => {
         if (securityCode === CORRECT_CODE) {
             setCodeError(false);
             setSending(true);
-            setTimeout(() => {
-                setBalance(prev => prev - parsedAmount);
-                setSending(false);
-                setStep('success');
-            }, 2000);
+            
+            const uid = localStorage.getItem('userId');
+            // Simulate processing delay
+            await new Promise(r => setTimeout(r, 1500));
+
+            if (uid && selectedAccount === 0) {
+                 try {
+                     await api.confirmTransaction({
+                         user_id: uid,
+                         merchant: merchantPayload, // Send resolved name or raw IBAN
+                         amount: parsedAmount,
+                         category: 'Transfer',
+                         city: 'Online'
+                     });
+                 } catch (e) {
+                     console.error("Transfer failed", e);
+                 }
+            }
+            
+            setAccounts(prev => {
+                const newAccs = [...prev];
+                newAccs[selectedAccount] = { ...newAccs[selectedAccount], balance: newAccs[selectedAccount].balance - parsedAmount };
+                return newAccs;
+            });
+
+            setSending(false);
+            setStep('success');
         } else {
             setCodeError(true);
         }
@@ -92,7 +133,7 @@ export function SendMoney() {
                             {accounts.map((acc, idx) => (
                                 <button
                                     key={idx}
-                                    onClick={() => { setSelectedAccount(idx); setBalance(acc.balance); }}
+                                    onClick={() => setSelectedAccount(idx)}
                                     className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl border-2 transition-all text-left ${selectedAccount === idx ? 'border-[#FFD100] bg-[#FFD10008]' : 'border-border hover:border-[#FFD100]/40'}`}
                                 >
                                     <div>

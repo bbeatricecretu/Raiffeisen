@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, UserPlus, Check, Copy, Share2, MessageCircle, Link2, Users } from 'lucide-react';
+import { api } from '../services/api';
 import { platformUsers } from '../services/mockData';
 
 const REFERRAL_LINK = 'https://connectgrow.ro/ref/ALEX2024';
@@ -8,12 +9,24 @@ export function Invite() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
+  const [users, setUsers] = useState<any[]>(platformUsers);
 
-  const filtered = platformUsers.filter(u =>
-    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.career.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.location.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    if (searchQuery.length > 2) {
+      api.searchUsers(searchQuery).then(res => {
+        // Map backend fields to frontend UI expected fields if needed
+        // Backend: id, name, email, phone, career, location
+        // Frontend mock: id, name, career, location, mutual (missing in backend)
+        setUsers(res.map((u: any) => ({
+             ...u, 
+             mutual: Math.floor(Math.random() * 10),
+             avatar: `https://ui-avatars.com/api/?name=${u.name}&background=random`
+        })));
+      });
+    } else {
+        setUsers(platformUsers);
+    }
+  }, [searchQuery]);
 
   const sendRequest = (id: string) => {
     setSentRequests(prev => new Set([...prev, id]));
@@ -104,7 +117,7 @@ export function Invite() {
 
           {/* User cards grid */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map(user => (
+            {users.map(user => (
               <div key={user.id} className="rounded-2xl border border-border p-4 hover:shadow-md transition-all group">
                 {/* Avatar + online indicator */}
                 <div className="flex items-start justify-between mb-3">
@@ -152,7 +165,7 @@ export function Invite() {
             ))}
           </div>
 
-          {filtered.length === 0 && (
+          {users.length === 0 && (
             <div className="text-center py-12">
               <Users size={36} className="text-muted-foreground/40 mx-auto mb-3" />
               <p className="text-muted-foreground" style={{ fontSize: '14px' }}>No users found for "{searchQuery}"</p>

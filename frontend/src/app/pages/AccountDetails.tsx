@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { api } from '../services/api';
 import { FileText, Eye, EyeOff, Download, Lock, Shield, Copy, Check } from 'lucide-react';
 
 export function AccountDetails() {
@@ -30,14 +31,16 @@ export function AccountDetails() {
     const [copiedField, setCopiedField] = useState<string | null>(null);
     const [generatingStatement, setGeneratingStatement] = useState(false);
     const [statementGenerated, setStatementGenerated] = useState(false);
+    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0].substring(0, 8) + '01'); // First day of current month
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]); // Today
 
     const CORRECT_CODE = '1234';
 
-    const accountData = {
+    const [accountData, setAccountData] = useState({
         type: 'Cont Curent (RON)',
-        owner: 'Alexandru Petrescu',
-        iban: 'RO49BBBR1831007593840099',
-        balance: '24,851.20 RON',
+        owner: '',
+        iban: '',
+        balance: '0,00 RON',
         // Secured data
         cardNumber: '4821 6732 8901 7634',
         cvv: '847',
@@ -45,7 +48,26 @@ export function AccountDetails() {
         pin: '****',
         openDate: '15.03.2021',
         branch: 'Sucursala București – Pipera',
-    };
+    });
+
+    useEffect(() => {
+        const fetchUserData = async () => {
+            const uid = localStorage.getItem('userId');
+            if (!uid) return;
+            try {
+                const user = await api.getUser(uid);
+                setAccountData(prev => ({
+                    ...prev,
+                    owner: user.name,
+                    iban: user.iban || 'RO49BBBR1831007593840099',
+                    balance: (user.balance?.toLocaleString('ro-RO', { minimumFractionDigits: 2 }) || '0,00') + ' RON'
+                }));
+            } catch (e) {
+                console.error("Failed to load user data", e);
+            }
+        };
+        fetchUserData();
+    }, []);
 
     const handleUnlock = () => {
         if (securityCode === CORRECT_CODE) {
@@ -62,13 +84,34 @@ export function AccountDetails() {
         setTimeout(() => setCopiedField(null), 2000);
     };
 
-    const handleGenerateStatement = () => {
+    const handleGenerateStatement = async () => {
         setGeneratingStatement(true);
-        setTimeout(() => {
-            setGeneratingStatement(false);
+        const uid = localStorage.getItem('userId');
+        if (!uid) {
+             setGeneratingStatement(false);
+             return;
+        }
+        
+        try {
+            const blob = await api.generateStatement(uid, startDate, endDate);
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Raiffeisen_Statement_${startDate}_${endDate}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            
             setStatementGenerated(true);
             setTimeout(() => setStatementGenerated(false), 4000);
-        }, 2000);
+        } catch (e: any) {
+            console.error(e);
+            alert("Failed to generate statement: " + e.message);
+        } finally {
+            setGeneratingStatement(false);
+        }
     };
 
     return (
@@ -223,7 +266,8 @@ export function AccountDetails() {
                             <label className="text-muted-foreground block mb-1.5" style={{ fontSize: '12px', fontWeight: 600 }}>FROM</label>
                             <input
                                 type="date"
-                                defaultValue="2026-02-01"
+                                value={startDate}
+                                onChange={e => setStartDate(e.target.value)}
                                 className="w-full px-3 py-2.5 rounded-xl border border-border text-[#1B2B4B] outline-none focus:border-[#FFD100] transition-colors"
                                 style={{ fontSize: '13px' }}
                             />
@@ -232,7 +276,8 @@ export function AccountDetails() {
                             <label className="text-muted-foreground block mb-1.5" style={{ fontSize: '12px', fontWeight: 600 }}>TO</label>
                             <input
                                 type="date"
-                                defaultValue="2026-03-04"
+                                value={endDate}
+                                onChange={e => setEndDate(e.target.value)}
                                 className="w-full px-3 py-2.5 rounded-xl border border-border text-[#1B2B4B] outline-none focus:border-[#FFD100] transition-colors"
                                 style={{ fontSize: '13px' }}
                             />
