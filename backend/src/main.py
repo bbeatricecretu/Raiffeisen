@@ -1,11 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import os
 import uvicorn
 from contextlib import asynccontextmanager
 from datetime import datetime
+import io
+from fpdf import FPDF
 
 from src.ai.service.ai_service import AIService
 from src.database.database_client import DatabaseClient
@@ -80,6 +83,43 @@ class TransactionRequest(BaseModel):
     county: Optional[str] = None
     city: Optional[str] = None
     currency: str = "RON"
+
+class ExchangeRequest(BaseModel):
+    user_id: str
+    from_currency: str
+    to_currency: str
+    amount: float
+
+class AdminUserCreateRequest(BaseModel):
+    name: str
+    password: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    iban: Optional[str] = None
+    balance: Optional[float] = 0.0
+    career: Optional[str] = None
+
+class ContactCreateRequest(BaseModel):
+    user_id: str
+    name: str
+    iban: Optional[str] = ""
+    phone: Optional[str] = ""
+
+class ContactUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    iban: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+
+class AdminUserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    iban: Optional[str] = None
+    balance: Optional[float] = None
+    career: Optional[str] = None
+    location: Optional[str] = None
+    password: Optional[str] = None
 
 # --- App Lifecycle ---
 
@@ -271,12 +311,146 @@ async def get_transactions(user_id: str, limit: int = 50):
     db = get_db()
     return db.get_user_transactions(user_id, limit=limit)
 
+@app.get("/api/users/{user_id}/statement")
+async def generate_statement(user_id: str, start_date: str, end_date: str):
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    transactions = db.get_user_transactions(user_id, limit=1000, start_date=start_date, end_date=end_date)
+    
+    # PDF Generation
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    # Header
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="Account Statement / Extras de cont", ln=True, align='C')
+    pdf.ln(10)
+    
+    # User Info
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt=f"Client: {user['name']}", ln=True, align='L')
+    pdf.cell(200, 10, txt=f"IBAN: {user.get('iban', 'N/A')}", ln=True, align='L')
+    pdf.cell(200, 10, txt=f"Period: {start_date} to {end_date}", ln=True, align='L')
+    pdf.ln(10)
+    
+    # Table Header
+    pdf.set_font("Arial", 'B', 10)
+    col_width = 47 # Approx width
+    row_height = 10
+    
+    headers = ["Date", "Details", "Category", "Amount (RON)"]
+    
+    for header in headers:
+        pdf.cell(col_width, row_height, header, border=1)
+    pdf.ln(row_height)
+    
+    # Table Rows
+    pdf.set_font("Arial", size=10)
+    total_spent = 0
+    total_income = 0
+    
+    for tx in transactions:
+        # Standard Logic: 
+        # Sent money (debit): stored as positive amount. shown as -X
+        # Received money (credit/transfer): stored as negative amount. shown as +X
+        
+        amt = tx['amount']
+        if amt > 0:
+            display_amount = f"-{amt:.2f}"
+            total_spent += amt
+        else:
+            display_amount = f"+{abs(amt):.2f}"
+            total_income += abs(amt)
+             
+        pdf.cell(col_width, row_height, str(tx['date'])[:10], border=1)
+        # Truncate merchant to fit
+        merchant = str(tx['merchant_name'])[:22] 
+        pdf.cell(col_width, row_height, merchant, border=1)
+        pdf.cell(col_width, row_height, str(tx.get('category', 'General'))[:22], border=1)
+        pdf.cell(col_width, row_height, display_amount, border=1)
+        pdf.ln(row_height)
+        
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(200, 10, txt=f"Total Debits: {total_spent:.2f} RON", ln=True)
+    pdf.cell(200, 10, txt=f"Total Credits: {total_income:.2f} RON", ln=True)
+
+    # Output to buffer (use 'dest=S' equivalent for FPDF2, or just output().encode('latin-1'))
+    # FPDF2 output() returns bytearray by default if no name provided? 
+    # Actually modern fpdf2: pdf.output() returns bytearray or bytes.
+    # Let's use robust way: 
+    
+    try:
+        # Try outputting to bytearray directly
+        pdf_bytes = pdf.output() 
+        # In some versions output() returns str in latin-1, need to encode. 
+        if isinstance(pdf_bytes, str):
+            pdf_bytes = pdf_bytes.encode('latin-1')
+    except Exception as e:
+        print(f"PDF Gen error: {e}")
+        # Fallback to older method if needed
+        s = pdf.output(dest='S')
+        pdf_bytes = s.encode('latin-1')
+        
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes), 
+        media_type="application/pdf", 
+        headers={"Content-Disposition": f"attachment; filename=statement_{user_id}_{start_date}.pdf"}
+    )
+
 @app.post("/api/transactions")
 async def create_transaction(req: TransactionRequest):
     db = get_db()
     # Use current time
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
+        # Check if Transfer and Recipient exists BEFORE inserting first transaction
+        if req.category == "Transfer":
+            # Try to find recipient by multiple fields
+            recipient = db.get_user_by_name(req.merchant)
+            if not recipient:
+                recipient = db.get_user_by_iban(req.merchant)
+            if not recipient:
+                recipient = db.get_user_by_phone(req.merchant)
+            if not recipient:
+                recipient = db.get_user_by_email(req.merchant)
+
+            if recipient:
+                sender = db.get_user(req.user_id)
+                sender_name = sender['name'] if sender else "Unknown Sender"
+                recipient_name = recipient['name']
+                
+                # 1. Sender transaction (Paid to Recipient Name)
+                tx = db.insert_transaction(
+                    user_id=req.user_id,
+                    merchant_name=recipient_name, # Use actual name
+                    amount=req.amount,
+                    date=now,
+                    city=req.city,
+                    county=req.county,
+                    category=req.category,
+                    currency=req.currency
+                )
+
+                # 2. Recipient transaction (Received from Sender Name)
+                db.insert_transaction(
+                    user_id=recipient['id'],
+                    merchant_name=sender_name,  # Shows as "From Sender"
+                    amount=-req.amount,         # Negative amount adds to balance
+                    date=now,
+                    city=req.city,
+                    county=req.county,
+                    category="Transfer",
+                    currency=req.currency
+                )
+                
+                return {"status": "success", "transaction": tx}
+
+        # Fallback for non-transfers or unknown recipients
         tx = db.insert_transaction(
             user_id=req.user_id,
             merchant_name=req.merchant,
@@ -296,6 +470,112 @@ async def create_transaction(req: TransactionRequest):
 async def search_users_endpoint(q: str):
     db = get_db()
     return db.search_users(q)
+
+@app.get("/api/users")
+async def get_all_users():
+    db = get_db()
+    return db.get_all_users()
+
+EXCHANGE_RATES = {
+    "RON": {"EUR": 0.2012, "USD": 0.2185, "GBP": 0.1724, "CHF": 0.1892, "HUF": 78.45, "RON": 1},
+    "EUR": {"RON": 4.9700, "USD": 1.0860, "GBP": 0.8568, "CHF": 0.9405, "HUF": 389.82, "EUR": 1},
+    "USD": {"RON": 4.5760, "EUR": 0.9208, "GBP": 0.7889, "CHF": 0.8662, "HUF": 358.90, "USD": 1},
+    "GBP": {"RON": 5.8010, "EUR": 1.1672, "USD": 1.2676, "CHF": 1.0979, "HUF": 455.02, "GBP": 1},
+    "CHF": {"RON": 5.2854, "EUR": 1.0633, "USD": 1.1544, "GBP": 0.9108, "HUF": 414.28, "CHF": 1},
+    "HUF": {"RON": 0.01275, "EUR": 0.002565, "USD": 0.002786, "GBP": 0.002198, "CHF": 0.002414, "HUF": 1},
+}
+
+@app.post("/api/exchange")
+async def exchange_currency(req: ExchangeRequest):
+    db = get_db()
+    user = db.get_user(req.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    rate = EXCHANGE_RATES.get(req.from_currency, {}).get(req.to_currency)
+    if not rate:
+        raise HTTPException(status_code=400, detail="Invalid currency pair")
+        
+    # Determine balance keys
+    from_key = "balance" if req.from_currency == "RON" else f"balance_{req.from_currency.lower()}"
+    to_key = "balance" if req.to_currency == "RON" else f"balance_{req.to_currency.lower()}"
+    
+    current_from_bal = user.get(from_key, 0.0) or 0.0
+    
+    if current_from_bal < req.amount:
+        raise HTTPException(status_code=400, detail="Insufficient funds")
+        
+    converted_amount = req.amount * rate
+    
+    # Update balances atomically? DB Client update_user is not strictly atomic for multiple fields dependent on previous state inside Python, 
+    # but good enough for this demo.
+    new_from_bal = current_from_bal - req.amount
+    current_to_bal = user.get(to_key, 0.0) or 0.0
+    new_to_bal = current_to_bal + converted_amount
+    
+    updates = {
+        from_key: new_from_bal,
+        to_key: new_to_bal
+    }
+    
+    # Record transaction first (insert_transaction has a side-effect that
+    # deducts from the RON balance column). update_user called afterwards
+    # will overwrite with the correct final balances.
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.insert_transaction(
+        user_id=req.user_id,
+        merchant_name=f"Exchange to {req.to_currency}",
+        amount=req.amount,
+        date=now,
+        category="Exchange",
+        currency=req.from_currency
+    )
+    
+    db.update_user(req.user_id, **updates)
+    
+    return {"status": "success", "from_balance": new_from_bal, "to_balance": new_to_bal, "converted_amount": converted_amount}
+
+@app.post("/api/users")
+async def admin_create_user(req: AdminUserCreateRequest):
+    db = get_db()
+    # Check for existing
+    if req.email and db.get_user_by_email(req.email):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # We pass 'career' and 'location' via updates since create_user might not have them as args
+    # Wait, create_user only accepts specific args.
+    # Let's create then update.
+    user = db.create_user(
+        name=req.name,
+        password=req.password,
+        email=req.email,
+        phone=req.phone,
+        iban=req.iban,
+        balance=req.balance if req.balance is not None else 0.0,
+        agreed=True
+    )
+    
+    # Update optional fields not in create_user
+    updates = {}
+    if req.career: updates['career'] = req.career
+    if req.location: updates['location'] = req.location
+    
+    if updates:
+        db.update_user(user['id'], **updates)
+        return db.get_user(user['id'])
+        
+    return user
+
+@app.put("/api/users/{user_id}")
+async def admin_update_user(user_id: str, req: AdminUserUpdateRequest):
+    db = get_db()
+    # Support Pydantic V1 & V2
+    data = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    updates = {k: v for k, v in data.items() if v is not None}
+    if not updates:
+        return db.get_user(user_id)
+        
+    return db.update_user(user_id, **updates)
 
 # --- Teams & Network ---
 
@@ -362,6 +642,40 @@ async def react_to_post(post_id: str, req: ReactRequest):
 async def comment_on_post(post_id: str, req: CommentRequest):
     db = get_db()
     return db.create_comment(post_id, req.user_id, text=req.text)
+
+# --- Contacts CRUD ---
+
+@app.get("/api/users/{user_id}/contacts")
+async def get_user_contacts(user_id: str):
+    db = get_db()
+    return db.get_user_contacts(user_id)
+
+@app.post("/api/contacts")
+async def create_contact(req: ContactCreateRequest):
+    db = get_db()
+    return db.create_contact(req.user_id, req.name, iban=req.iban, phone=req.phone)
+
+@app.put("/api/contacts/{contact_id}")
+async def update_contact(contact_id: str, req: ContactUpdateRequest):
+    db = get_db()
+    data = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    updates = {k: v for k, v in data.items() if v is not None}
+    return db.update_contact(contact_id, **updates)
+
+@app.delete("/api/contacts/{contact_id}")
+async def delete_contact(contact_id: str):
+    db = get_db()
+    db.delete_contact(contact_id)
+    return {"status": "deleted"}
+
+# --- Transaction Delete ---
+
+@app.delete("/api/transactions/{tx_id}")
+async def delete_transaction(tx_id: str):
+    db = get_db()
+    if not db.delete_transaction(tx_id):
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"status": "deleted"}
 
 
 if __name__ == "__main__":

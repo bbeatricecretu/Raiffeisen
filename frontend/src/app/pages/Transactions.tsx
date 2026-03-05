@@ -64,6 +64,8 @@ export function Transactions() {
                          category: r.category || 'Other',
                          iban: 'RO49' + r.id.substring(0, 16).toUpperCase(), // Fake IBAN
                          county: r.county || 'B',
+                         // Ensure ISO format for reliable Date parsing
+                         isoDate: r.date.includes('T') ? r.date : r.date.replace(' ', 'T'),
                      }));
                      setTransactionsList(mapped);
                  }
@@ -99,15 +101,32 @@ export function Transactions() {
             }
 
             // Apply date filter
-            if (dateRange === 'Custom Range' && customStartDate && customEndDate) {
-                try {
-                    const trxDate = new Date(trx.isoDate);
-                    const start = new Date(customStartDate);
-                    const end = new Date(customEndDate);
-                    start.setHours(0, 0, 0, 0);
-                    end.setHours(23, 59, 59, 999);
-                    if (trxDate < start || trxDate > end) return false;
-                } catch (e) { /* keep */ }
+            if (dateRange !== 'All Time') { // Assuming 'All' might be default or just these specific keys
+                const trxDate = new Date(trx.isoDate);
+                const now = new Date();
+                
+                if (dateRange === 'Today') {
+                    if (trxDate.toDateString() !== now.toDateString()) return false;
+                } else if (dateRange === 'Last 7 Days') {
+                    const sevenDaysAgo = new Date();
+                    sevenDaysAgo.setDate(now.getDate() - 7);
+                    sevenDaysAgo.setHours(0, 0, 0, 0);
+                    if (trxDate < sevenDaysAgo) return false;
+                } else if (dateRange === 'This Month') {
+                   if (trxDate.getMonth() !== now.getMonth() || trxDate.getFullYear() !== now.getFullYear()) return false;
+                } else if (dateRange === 'Last Month') {
+                   // robustly get previous month
+                   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                   if (trxDate.getMonth() !== lastMonthDate.getMonth() || trxDate.getFullYear() !== lastMonthDate.getFullYear()) return false;
+                } else if (dateRange === 'Custom Range' && customStartDate && customEndDate) {
+                    try {
+                        const start = new Date(customStartDate);
+                        const end = new Date(customEndDate);
+                        start.setHours(0, 0, 0, 0);
+                        end.setHours(23, 59, 59, 999);
+                        if (trxDate < start || trxDate > end) return false;
+                    } catch (e) { /* keep */ }
+                }
             }
 
             return true;

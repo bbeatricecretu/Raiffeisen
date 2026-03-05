@@ -76,18 +76,35 @@ function AiResponseCard({ data }: { data: ChatMessage['data'] }) {
 export function SmartChat() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [currentUserData, setCurrentUserData] = useState(currentUser);
+  const [realTransactions, setRealTransactions] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
+    const uid = localStorage.getItem('userId') || 'me';
+    
     if (stored) {
       try {
         const u = JSON.parse(stored);
         setCurrentUserData(prev => ({ ...prev, name: u.name, id: u.id }));
       } catch {}
     }
+
+    // Fetch real transactions for AI analysis
+    api.getTransactions(uid, 1000).then(txs => {
+      const normalized = txs.map((t: any) => ({
+        ...t,
+        merchant: t.merchant_name || t.merchant, // Handle backend field name difference
+        date: t.date?.split(' ')[0] || t.date // Ensure YYYY-MM-DD
+      }));
+      setRealTransactions(normalized);
+    }).catch(err => {
+      console.error("Failed to fetch transactions for AI", err);
+      // Fallback to mock data if API fails
+      setRealTransactions(mockTransactions);
+    });
   }, []);
 
   useEffect(() => {
@@ -115,16 +132,32 @@ export function SmartChat() {
       let cardData: any = undefined;
 
       if (searchRes.status === 'success' && searchRes.parsed_intent) {
-        // 3. Filter Transactions (Client-side, mimicking backend DB)
+        // 3. Filter Transactions (Client-side logic now uses REAL data)
         const intent = searchRes.parsed_intent;
         
-        filteredTx = mockTransactions.filter(tx => {
+        // Use the large dataset fetched from backend
+        const dataset = realTransactions.length > 0 ? realTransactions : mockTransactions;
+
+        filteredTx = dataset.filter(tx => {
+          // Normalize texts for comparison
+          const merchant = (tx.merchant_name || tx.merchant).toLowerCase();
+          const qMerchant = (intent.merchant_name || '').toLowerCase();
+          
           let match = true;
-          if (intent.merchant_name && !tx.merchant.toLowerCase().includes(intent.merchant_name.toLowerCase())) match = false;
+          
+          // Fuzzy merchant match (handle "Carrefour Baneasa" vs "Carrefour")
+          if (qMerchant) {
+            // Check if one contains the other
+            if (!merchant.includes(qMerchant) && !qMerchant.includes(merchant)) {
+               match = false;
+            }
+          }
+          
           // Approximate location matching
-          if (intent.location && !tx.county.toLowerCase().includes(intent.location.toLowerCase())) match = false;
+          if (intent.location && !tx.county?.toLowerCase().includes(intent.location.toLowerCase())) match = false;
           // Handle nullable category in tx if needed
           if (intent.category && tx.category && !tx.category.toLowerCase().includes(intent.category.toLowerCase())) match = false;
+          
           return match;
         });
 

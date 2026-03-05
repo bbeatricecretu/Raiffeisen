@@ -21,7 +21,8 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('cards');
   const [chatInput, setChatInput] = useState('');
-  const [balance, setBalance] = useState<number>(24851.20);
+  const [balance, setBalance] = useState<number>(0);
+  const [otherBalances, setOtherBalances] = useState<Record<string, number>>({});
   const recent = transactions.slice(0, 6);
 
   useEffect(() => {
@@ -29,8 +30,15 @@ export function Dashboard() {
       const uid = localStorage.getItem('userId') || 'me';
       try {
         const user = await api.getUser(uid);
-        if (user && user.balance !== undefined) {
-          setBalance(user.balance);
+        if (user) {
+          setBalance(user.balance || 0);
+          const others: Record<string, number> = {};
+          if (user.balance_eur) others['EUR'] = user.balance_eur;
+          if (user.balance_usd) others['USD'] = user.balance_usd;
+          if (user.balance_gbp) others['GBP'] = user.balance_gbp;
+          if (user.balance_chf) others['CHF'] = user.balance_chf;
+          if (user.balance_huf) others['HUF'] = user.balance_huf;
+          setOtherBalances(others);
         }
       } catch (e) {
         console.error("Failed to fetch balance", e);
@@ -138,8 +146,20 @@ export function Dashboard() {
           </div>
 
           {/* Balance below card */}
-          <div className="text-center">
-            <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '32px' }}>{balance.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON</div>
+          <div className="text-center space-y-2">
+            <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '32px' }}>
+              {balance.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON
+            </div>
+            {Object.entries(otherBalances).length > 0 && (
+              <div className="flex flex-wrap justify-center gap-3 mt-2">
+                {Object.entries(otherBalances).map(([curr, val]) => (
+                  <div key={curr} className="px-4 py-2 bg-white rounded-xl border border-border flex items-center gap-2 shadow-sm">
+                    <span className="font-bold text-[#1B2B4B]">{curr}</span>
+                    <span className="font-mono text-[#1B2B4B]/80">{val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Quick Actions - two rows */}

@@ -42,10 +42,24 @@ class DatabaseClient:
             self._memory_conn.row_factory = sqlite3.Row
             self._memory_conn.execute("PRAGMA foreign_keys = ON")
             self._memory_conn.executescript(schema)
+            # Add columns if they do not exist
+            try:
+                self._memory_conn.execute("ALTER TABLE users ADD COLUMN career TEXT")
+            except Exception: pass
+            try:
+                self._memory_conn.execute("ALTER TABLE users ADD COLUMN location TEXT")
+            except Exception: pass
             self._memory_conn.commit()
         else:
             conn = sqlite3.connect(self.db_path)
             conn.executescript(schema)
+            # Add columns if they do not exist
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN career TEXT")
+            except Exception: pass
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN location TEXT")
+            except Exception: pass
             conn.commit()
             conn.close()
 
@@ -76,7 +90,7 @@ class DatabaseClient:
 
     def create_user(self, name: str, password: str,
                     email: str = "", phone: str = "",
-                    iban: str = "", balance: float = 0.0, agreed: bool = False) -> Dict[str, Any]:
+                    iban: str = "", balance: float = 2500.00, agreed: bool = False) -> Dict[str, Any]:
         uid = _new_id()
         with self._get_connection() as conn:
             conn.execute(
@@ -101,11 +115,49 @@ class DatabaseClient:
             ).fetchone()
         return dict(row) if row else None
 
-    def get_user_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+    # Removed old get_user_by_phone to avoid duplicates (moved below)
+
+
+    def get_user_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         with self._get_connection() as conn:
             row = conn.execute(
-                "SELECT * FROM users WHERE phone = ?", (phone,)
+                "SELECT * FROM users WHERE name = ?", (name,)
             ).fetchone()
+        return dict(row) if row else None
+
+    def get_user_by_iban(self, iban: str) -> Optional[Dict[str, Any]]:
+        # Normalize: Remove spaces, uppercase
+        clean_iban = iban.replace(" ", "").upper()
+        # Some DB entries might have spaces, so we should check both
+        with self._get_connection() as conn:
+            # Check exact match
+            row = conn.execute("SELECT * FROM users WHERE iban = ?", (iban,)).fetchone()
+            if not row:
+                # Check normalized match against normalized DB content (if DB supports REPLACE)
+                # Or simply iterate if needed, but REPLACE is standard enough for SQLite
+                try:
+                    row = conn.execute(
+                        "SELECT * FROM users WHERE REPLACE(REPLACE(UPPER(iban), ' ', ''), '-', '') = ?", 
+                        (clean_iban,)
+                    ).fetchone()
+                except Exception:
+                    pass
+        return dict(row) if row else None
+        
+    def get_user_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+        # Normalize: Remove spaces, dashes, parens
+        clean_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        with self._get_connection() as conn:
+            # Check exact match
+            row = conn.execute("SELECT * FROM users WHERE phone = ?", (phone,)).fetchone()
+            if not row:
+                try:
+                    row = conn.execute(
+                        "SELECT * FROM users WHERE REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', ''), ')', '') = ?", 
+                        (clean_phone,)
+                    ).fetchone()
+                except Exception:
+                    pass
         return dict(row) if row else None
 
     def search_users(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -118,7 +170,8 @@ class DatabaseClient:
         return [dict(r) for r in rows]
 
     def update_user(self, user_id: str, **fields) -> Optional[Dict[str, Any]]:
-        allowed = {"name", "email", "phone", "iban", "agreed"}
+        allowed = {"name", "email", "phone", "iban", "agreed", "balance", "career", "location", "password",
+                   "balance_eur", "balance_usd", "balance_gbp", "balance_chf", "balance_huf"}
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return self.get_user(user_id)
@@ -127,6 +180,11 @@ class DatabaseClient:
             conn.execute(f"UPDATE users SET {cols} WHERE id = ?",
                          (*updates.values(), user_id))
         return self.get_user(user_id)
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM users").fetchall()
+        return [dict(r) for r in rows]
 
     # MERCHANTS
 
@@ -202,13 +260,31 @@ class DatabaseClient:
         return dict(row) if row else None
 
     def get_user_transactions(self, user_id: str,
-                               limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+                               limit: int = 100, offset: int = 0,
+                               start_date: Optional[str] = None, 
+                               end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = "SELECT * FROM transactions WHERE user_id = ?"
+        params = [user_id]
+        
+        if start_date:
+            query += " AND date >= ?"
+            params.append(start_date)
+            
+        if end_date:
+            # End of day inclusive
+            if len(end_date) == 10: # YYYY-MM-DD
+                query += " AND date <= ?"
+                params.append(end_date + " 23:59:59")
+            else:
+                query += " AND date <= ?"
+                params.append(end_date)
+        
+        query += " ORDER BY date DESC LIMIT ? OFFSET ?"
+        params.append(limit)
+        params.append(offset)
+
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM transactions WHERE user_id = ? "
-                "ORDER BY date DESC LIMIT ? OFFSET ?",
-                (user_id, limit, offset),
-            ).fetchall()
+            rows = conn.execute(query, tuple(params)).fetchall()
         return [dict(r) for r in rows]
 
     def get_spending_by_county(self, user_id: str,
@@ -537,6 +613,59 @@ class DatabaseClient:
                 (conversation_id, limit),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # CONTACTS
+
+    def create_contact(self, user_id: str, name: str,
+                       iban: str = "", phone: str = "") -> Dict[str, Any]:
+        cid = _new_id()
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO contacts (id, user_id, name, iban, phone) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (cid, user_id, name, iban or None, phone or None),
+            )
+        return self.get_contact(cid)
+
+    def get_contact(self, contact_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM contacts WHERE id = ?", (contact_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_user_contacts(self, user_id: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM contacts WHERE user_id = ? ORDER BY name ASC",
+                (user_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_contact(self, contact_id: str, **fields) -> Optional[Dict[str, Any]]:
+        allowed = {"name", "iban", "phone"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return self.get_contact(contact_id)
+        cols = ", ".join(f"{k} = ?" for k in updates)
+        with self._get_connection() as conn:
+            conn.execute(f"UPDATE contacts SET {cols} WHERE id = ?",
+                         (*updates.values(), contact_id))
+        return self.get_contact(contact_id)
+
+    def delete_contact(self, contact_id: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+
+    # TRANSACTION DELETE
+
+    def delete_transaction(self, tx_id: str) -> bool:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,)).fetchone()
+            if not row:
+                return False
+            conn.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
+        return True
 
     # UTILITY
 

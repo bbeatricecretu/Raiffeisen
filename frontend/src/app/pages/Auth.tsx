@@ -222,7 +222,7 @@ export function Auth() {
             {mode === 'signup' ? 'Fill in your details to get started' : 'Sign in to your Connect & Grow account'}
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete={mode === 'signup' ? 'off' : 'on'}>
             {mode === 'signup' && (
               <>
                 {/* Full Name */}
@@ -231,6 +231,8 @@ export function Auth() {
                   <div className="relative">
                     <input
                       type="text"
+                      name="fullName"
+                      autoComplete="off"
                       placeholder="Alexandru Petrescu"
                       value={fields.fullName.value}
                       onChange={e => updateField('fullName', e.target.value)}
@@ -256,6 +258,8 @@ export function Auth() {
               <div className="relative">
                 <input
                   type="email"
+                  name="email"
+                  autoComplete={mode === 'signup' ? 'off' : 'email'}
                   placeholder="alex@email.com"
                   value={fields.email.value}
                   onChange={e => updateField('email', e.target.value)}
@@ -279,6 +283,8 @@ export function Auth() {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   placeholder="Min. 8 characters, 1 uppercase"
                   value={fields.password.value}
                   onChange={e => updateField('password', e.target.value)}
@@ -314,6 +320,8 @@ export function Auth() {
                   <div className="relative">
                     <input
                       type="text"
+                      name="career"
+                      autoComplete="off"
                       placeholder="e.g. Software Engineer, Financial Analyst"
                       value={fields.career.value}
                       onChange={e => updateField('career', e.target.value)}
@@ -337,6 +345,8 @@ export function Auth() {
                   <div className="relative">
                     <input
                       type="tel"
+                      name="phone"
+                      autoComplete="off"
                       placeholder="+40 7XX XXX XXX"
                       value={fields.phone.value}
                       onChange={e => updateField('phone', e.target.value)}

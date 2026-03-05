@@ -165,7 +165,7 @@ export function Invite() {
             ))}
           </div>
 
-          {filtered.length === 0 && (
+          {users.length === 0 && (
             <div className="text-center py-12">
               <Users size={36} className="text-muted-foreground/40 mx-auto mb-3" />
               <p className="text-muted-foreground" style={{ fontSize: '14px' }}>No users found for "{searchQuery}"</p>

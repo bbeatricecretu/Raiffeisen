@@ -112,13 +112,31 @@ export const api = {
   
   // --- Bank Features ---
 
-  getSpendingMap: async (userId: string) => {
-    const res = await fetch(`${API_BASE_URL}/spending/map?user_id=${userId}`);
+  getSpendingMap: async (userId: string, period: string = 'all') => {
+    const res = await fetch(`${API_BASE_URL}/spending/map?user_id=${userId}&period=${period}`);
     return res.json();
   },
 
-  getTransactions: async (userId: string) => {
-    const res = await fetch(`${API_BASE_URL}/transactions?user_id=${userId}`);
+  getTransactions: async (userId: string, limit: number = 50) => {
+    const res = await fetch(`${API_BASE_URL}/transactions?user_id=${userId}&limit=${limit}`);
+    return res.json();
+  },
+
+  generateStatement: async (userId: string, startDate: string, endDate: string) => {
+    // Returns a Blob (PDF)
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/statement?start_date=${startDate}&end_date=${endDate}`);
+    if (!res.ok) throw new Error("Failed to generate statement");
+    return res.blob();
+  },
+
+  exchange: async (userId: string, fromCurrency: string, toCurrency: string, amount: number) => {
+    const res = await fetch(`${API_BASE_URL}/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, from_currency: fromCurrency, to_currency: toCurrency, amount }),
+    });
+    // Check if ok
+    if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
 
@@ -127,6 +145,31 @@ export const api = {
   getUser: async (userId: string) => {
     const res = await fetch(`${API_BASE_URL}/users/${userId}`);
     if (!res.ok) throw new Error('User not found');
+    return res.json();
+  },
+  
+  getAllUsers: async () => {
+    const res = await fetch(`${API_BASE_URL}/users`);
+    return res.json();
+  },
+
+  createUser: async (data: any) => {
+    const res = await fetch(`${API_BASE_URL}/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  updateUser: async (userId: string, data: any) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
 
@@ -198,5 +241,44 @@ export const api = {
       body: JSON.stringify(data),
     });
     return res.json();
-  }
+  },
+
+  deleteTransaction: async (txId: string) => {
+    const res = await fetch(`${API_BASE_URL}/transactions/${txId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  // --- Contacts ---
+
+  getUserContacts: async (userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/contacts`);
+    return res.json();
+  },
+
+  createContact: async (data: { user_id: string, name: string, iban?: string, phone?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/contacts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  updateContact: async (contactId: string, data: { name?: string, iban?: string, phone?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/contacts/${contactId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  deleteContact: async (contactId: string) => {
+    const res = await fetch(`${API_BASE_URL}/contacts/${contactId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
 };
