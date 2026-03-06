@@ -6,36 +6,29 @@ import {
   User, Menu, X, TrendingUp, Building2
 } from 'lucide-react';
 import { currentUser as mockUser } from '../../services/mockData';
-
-const navItems = {
-  bank: [
-    { to: '/app/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/app/chat', icon: MessageSquare, label: 'Smart Chat', badge: 'AI' },
-    { to: '/app/map', icon: Map, label: 'Spending Map' },
-    { to: '/app/confirm', icon: CheckCircle2, label: 'Confirmations', badge: '1' },
-  ],
-  community: [
-    { to: '/app/community/c1', icon: Users, label: 'Community Feed' },
-    { to: '/app/invite', icon: UserPlus, label: 'Invite Friends' },
-    { to: '/app/join', icon: Search, label: 'Join Community' },
-  ],
-};
+import { api } from '../../services/api';
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(mockUser);
-  const [pendingCount, setPendingCount] = useState(1);
+  const [pendingCount, setPendingCount] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if demo transaction is pending
-    const checkPending = () => {
-        const isDone = localStorage.getItem('confirmed_ptx1');
-        setPendingCount(isDone ? 0 : 1);
+    const fetchPendingCount = async () => {
+      try {
+        const userId = localStorage.getItem('userId') || 'me';
+        const confs = await api.getUserConfirmations(userId, 'pending');
+        setPendingCount(Array.isArray(confs) ? confs.length : 0);
+      } catch {
+        setPendingCount(0);
+      }
     };
-    checkPending();
-    window.addEventListener('storage', checkPending);
+    fetchPendingCount();
+    const onConfirmationsChanged = () => fetchPendingCount();
+    window.addEventListener('confirmations-changed', onConfirmationsChanged);
+    window.addEventListener('storage', onConfirmationsChanged);
 
     const stored = localStorage.getItem('user');
     if (stored) {
@@ -52,7 +45,10 @@ export function AppLayout() {
       }
     }
 
-    return () => window.removeEventListener('storage', checkPending);
+    return () => {
+      window.removeEventListener('confirmations-changed', onConfirmationsChanged);
+      window.removeEventListener('storage', onConfirmationsChanged);
+    };
   }, []);
 
   const navItems = {

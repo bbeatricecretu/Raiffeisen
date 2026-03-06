@@ -111,6 +111,18 @@ class ContactUpdateRequest(BaseModel):
     phone: Optional[str] = None
     location: Optional[str] = None
 
+class PendingConfirmationRequest(BaseModel):
+    user_id: str
+    merchant: str
+    amount: float
+    currency: str = "RON"
+    category: Optional[str] = ""
+    city: Optional[str] = ""
+    county: Optional[str] = ""
+
+class PendingConfirmationStatusRequest(BaseModel):
+    status: str  # "confirmed" or "rejected"
+
 class AdminUserUpdateRequest(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
@@ -135,11 +147,9 @@ async def lifespan(app: FastAPI):
             print("WARNING: OPENAI_API_KEY not found in environment variables.")
         ai_service = AIService()
         
-        # Database initialization
+        # Database initialization – always resolve relative to this file (src/main.py → backend/raiffeisen.db)
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(current_dir, "..", "raiffeisen.db") # Adjust based on where main.py is (src/main.py -> backend/raiffeisen.db)
-        if not os.path.exists(os.path.dirname(db_path)):
-             db_path = "raiffeisen.db" # Fallback to cwd
+        db_path = os.path.join(current_dir, "..", "raiffeisen.db")
              
         db_client = DatabaseClient(db_path=db_path)
         print(f"Services initialized. DB at: {db_path}")
@@ -310,6 +320,14 @@ async def get_spending_map(user_id: str, period: str = "month"):
 async def get_transactions(user_id: str, limit: int = 50):
     db = get_db()
     return db.get_user_transactions(user_id, limit=limit)
+
+@app.get("/api/transactions/{tx_id}")
+async def get_single_transaction(tx_id: str):
+    db = get_db()
+    tx = db.get_transaction(tx_id)
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return tx
 
 @app.get("/api/users/{user_id}/statement")
 async def generate_statement(user_id: str, start_date: str, end_date: str):
@@ -675,6 +693,138 @@ async def delete_transaction(tx_id: str):
     db = get_db()
     if not db.delete_transaction(tx_id):
         raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"status": "deleted"}
+
+# --- Merchant Stats ---
+
+@app.get("/api/users/{user_id}/merchants")
+async def get_user_merchants(user_id: str):
+    """Return all merchants a user has transacted with, with aggregated stats."""
+    db = get_db()
+    with db._get_connection() as conn:
+        rows = conn.execute(
+            "SELECT merchant_name, COUNT(*) AS tx_count, SUM(amount) AS total_spent, "
+            "MAX(date) AS last_visit, MIN(date) AS first_visit, "
+            "AVG(amount) AS avg_spend "
+            "FROM transactions WHERE user_id = ? "
+            "GROUP BY merchant_name ORDER BY total_spent DESC",
+            (user_id,),
+        ).fetchall()
+    return [
+        {
+            "merchant_name": r["merchant_name"],
+            "tx_count": r["tx_count"],
+            "total_spent": r["total_spent"] or 0,
+            "last_visit": r["last_visit"],
+            "first_visit": r["first_visit"],
+            "avg_spend": r["avg_spend"] or 0,
+        }
+        for r in rows
+    ]
+
+@app.get("/api/users/{user_id}/merchant-stats/{merchant_name}")
+async def get_merchant_stats(user_id: str, merchant_name: str):
+    db = get_db()
+    stats = db.get_merchant_stats(user_id, merchant_name)
+    amounts = stats.get("transaction_amounts", [])
+    return {
+        "visit_count": stats["total_transactions"],
+        "total_spent": sum(amounts),
+        "last_visit": stats["last_transaction"],
+        "avg_spend": sum(amounts) / len(amounts) if amounts else 0,
+    }
+
+@app.get("/api/users/{user_id}/merchant-detail/{merchant_name}")
+async def get_merchant_detail(user_id: str, merchant_name: str):
+    db = get_db()
+    stats = db.get_merchant_stats(user_id, merchant_name)
+    amounts = stats.get("transaction_amounts", [])
+    transactions = db.filter_transactions(user_id, {"merchant": merchant_name}, limit=200)
+    return {
+        "visit_count": stats["total_transactions"],
+        "total_spent": sum(amounts),
+        "first_visit": stats["first_transaction"],
+        "last_visit": stats["last_transaction"],
+        "avg_spend": sum(amounts) / len(amounts) if amounts else 0,
+        "common_locations": stats.get("common_locations", []),
+        "weekday_distribution": stats.get("weekday_distribution", {}),
+        "transactions": transactions,
+    }
+
+# --- Pending Confirmations ---
+
+@app.get("/api/users/{user_id}/confirmations")
+async def get_user_confirmations(user_id: str, status: Optional[str] = None):
+    db = get_db()
+    return db.get_user_pending_confirmations(user_id, status=status)
+
+@app.post("/api/confirmations")
+async def create_confirmation(req: PendingConfirmationRequest):
+    db = get_db()
+    user = db.get_user(req.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.create_pending_confirmation(
+        user_id=req.user_id,
+        merchant=req.merchant,
+        amount=req.amount,
+        currency=req.currency,
+        category=req.category,
+        city=req.city,
+        county=req.county,
+    )
+
+@app.put("/api/confirmations/{conf_id}")
+async def update_confirmation_status(conf_id: str, req: PendingConfirmationStatusRequest):
+    db = get_db()
+    conf = db.get_pending_confirmation(conf_id)
+    if not conf:
+        raise HTTPException(status_code=404, detail="Confirmation not found")
+    if req.status not in ("confirmed", "rejected"):
+        raise HTTPException(status_code=400, detail="Status must be 'confirmed' or 'rejected'")
+
+    updated = db.update_pending_confirmation_status(conf_id, req.status)
+
+    # If confirmed, create the actual transaction
+    if req.status == "confirmed":
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        currency = conf.get("currency") or "RON"
+        amount = conf["amount"]
+
+        db.insert_transaction(
+            user_id=conf["user_id"],
+            merchant_name=conf["merchant"],
+            amount=amount,
+            date=now,
+            city=conf.get("city") or "",
+            county=conf.get("county") or "",
+            category=conf.get("category") or "",
+            currency=currency,
+        )
+
+        # insert_transaction always deducts `amount` from the RON balance.
+        # For non-RON currencies we need to:
+        #   1) undo the raw RON deduction and apply the converted RON amount
+        #   2) also deduct from the matching foreign-currency balance
+        if currency != "RON":
+            user = db.get_user(conf["user_id"])
+            if user:
+                rate = EXCHANGE_RATES.get(currency, {}).get("RON", 1)
+                ron_amount = amount * rate
+                # correct RON balance (insert_transaction subtracted `amount`)
+                new_ron = user.get("balance", 0) - (ron_amount - amount)
+                # deduct from the foreign-currency balance
+                fc_key = f"balance_{currency.lower()}"
+                new_fc = (user.get(fc_key, 0) or 0) - amount
+                db.update_user(conf["user_id"], balance=new_ron, **{fc_key: new_fc})
+
+    return updated
+
+@app.delete("/api/confirmations/{conf_id}")
+async def delete_confirmation(conf_id: str):
+    db = get_db()
+    if not db.delete_pending_confirmation(conf_id):
+        raise HTTPException(status_code=404, detail="Confirmation not found")
     return {"status": "deleted"}
 
 

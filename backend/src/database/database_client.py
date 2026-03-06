@@ -667,6 +667,59 @@ class DatabaseClient:
             conn.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
         return True
 
+    # PENDING CONFIRMATIONS
+
+    def create_pending_confirmation(self, user_id: str, merchant: str, amount: float,
+                                     currency: str = "RON", category: str = "",
+                                     city: str = "", county: str = "") -> Dict[str, Any]:
+        cid = _new_id()
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO pending_confirmations "
+                "(id, user_id, merchant, amount, currency, category, city, county) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (cid, user_id, merchant, amount, currency,
+                 category or None, city or None, county or None),
+            )
+        return self.get_pending_confirmation(cid)
+
+    def get_pending_confirmation(self, conf_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM pending_confirmations WHERE id = ?", (conf_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_user_pending_confirmations(self, user_id: str,
+                                        status: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = "SELECT * FROM pending_confirmations WHERE user_id = ?"
+        params: list = [user_id]
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC"
+        with self._get_connection() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_pending_confirmation_status(self, conf_id: str, status: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE pending_confirmations SET status = ? WHERE id = ?",
+                (status, conf_id),
+            )
+        return self.get_pending_confirmation(conf_id)
+
+    def delete_pending_confirmation(self, conf_id: str) -> bool:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM pending_confirmations WHERE id = ?", (conf_id,)
+            ).fetchone()
+            if not row:
+                return False
+            conn.execute("DELETE FROM pending_confirmations WHERE id = ?", (conf_id,))
+        return True
+
     # UTILITY
 
     def health_check(self) -> Dict[str, Any]:

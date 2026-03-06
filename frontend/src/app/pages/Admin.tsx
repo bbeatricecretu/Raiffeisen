@@ -1,7 +1,7 @@
 // frontend/src/app/pages/Admin.tsx
 import { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { Plus, Edit, Trash2, Search, X, ArrowLeft, CreditCard, Users as UsersIcon, Contact } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, X, ArrowLeft, CreditCard, Users as UsersIcon, Contact, ShieldCheck } from 'lucide-react';
 
 interface User {
   id: string;
@@ -33,7 +33,20 @@ interface ContactItem {
   phone: string;
 }
 
-type Tab = 'users' | 'transactions' | 'contacts';
+interface Confirmation {
+  id: string;
+  user_id: string;
+  merchant: string;
+  amount: number;
+  currency: string;
+  category: string;
+  city?: string;
+  county?: string;
+  status: 'pending' | 'confirmed' | 'rejected';
+  created_at: string;
+}
+
+type Tab = 'users' | 'transactions' | 'contacts' | 'confirmations';
 
 export function Admin() {
   const [users, setUsers] = useState<User[]>([]);
@@ -60,6 +73,12 @@ export function Admin() {
   const [isCreatingContact, setIsCreatingContact] = useState(false);
   const [contactForm, setContactForm] = useState<Partial<ContactItem>>({});
 
+  // Confirmations for selected user
+  const [confirmations, setConfirmations] = useState<Confirmation[]>([]);
+  const [confLoading, setConfLoading] = useState(false);
+  const [isCreatingConf, setIsCreatingConf] = useState(false);
+  const [confForm, setConfForm] = useState<Partial<Confirmation>>({});
+
   useEffect(() => { fetchUsers(); }, []);
 
   const fetchUsers = async () => {
@@ -82,11 +101,19 @@ export function Admin() {
     finally { setCtLoading(false); }
   };
 
+  const fetchConfirmations = async (uid: string) => {
+    setConfLoading(true);
+    try { setConfirmations(await api.getUserConfirmations(uid)); }
+    catch { setConfirmations([]); }
+    finally { setConfLoading(false); }
+  };
+
   const selectUser = (user: User) => {
     setSelectedUser(user);
     setActiveTab('transactions');
     fetchTransactions(user.id);
     fetchContacts(user.id);
+    fetchConfirmations(user.id);
   };
 
   const goBack = () => {
@@ -171,6 +198,38 @@ export function Admin() {
     try {
       await api.deleteContact(id);
       if (selectedUser) fetchContacts(selectedUser.id);
+    } catch (e) { alert('Failed: ' + e); }
+  };
+
+  // --- Confirmation CRUD ---
+  const handleCreateConf = () => {
+    setConfForm({ merchant: '', amount: 0, currency: 'RON', category: '', city: '', county: '' });
+    setIsCreatingConf(true);
+  };
+
+  const handleSaveConf = async () => {
+    try {
+      if (selectedUser) {
+        await api.createConfirmation({
+          user_id: selectedUser.id,
+          merchant: confForm.merchant || '',
+          amount: confForm.amount || 0,
+          currency: confForm.currency || 'RON',
+          category: confForm.category,
+          city: confForm.city,
+          county: confForm.county,
+        });
+        fetchConfirmations(selectedUser.id);
+      }
+      setIsCreatingConf(false);
+    } catch (e) { alert('Failed: ' + e); }
+  };
+
+  const handleDeleteConf = async (id: string) => {
+    if (!confirm('Delete this confirmation?')) return;
+    try {
+      await api.deleteConfirmation(id);
+      if (selectedUser) fetchConfirmations(selectedUser.id);
     } catch (e) { alert('Failed: ' + e); }
   };
 
@@ -348,10 +407,17 @@ export function Admin() {
         >
           <Contact size={16} /> Contacts ({contacts.length})
         </button>
+        <button
+          onClick={() => setActiveTab('confirmations')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === 'confirmations' ? 'bg-white text-[#1B2B4B] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          <ShieldCheck size={16} /> Confirmations ({confirmations.length})
+        </button>
       </div>
 
       {activeTab === 'transactions' && renderTransactionsTab()}
       {activeTab === 'contacts' && renderContactsTab()}
+      {activeTab === 'confirmations' && renderConfirmationsTab()}
     </>
   );
 
@@ -447,6 +513,129 @@ export function Admin() {
     </div>
   );
 
+  // ──────────── CONFIRMATIONS TAB ────────────
+
+  const renderConfirmationsTab = () => (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+        <span className="text-sm text-gray-500">{confirmations.length} confirmations</span>
+        <button onClick={handleCreateConf} className="flex items-center gap-2 bg-[#1B2B4B] text-white px-3 py-2 rounded-lg text-sm font-semibold hover:opacity-90">
+          <Plus size={16} /> Add Confirmation
+        </button>
+      </div>
+      <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-50 text-gray-500 font-medium sticky top-0">
+            <tr>
+              <th className="px-5 py-3">Created</th>
+              <th className="px-5 py-3">Merchant</th>
+              <th className="px-5 py-3">Category</th>
+              <th className="px-5 py-3">County</th>
+              <th className="px-5 py-3 text-right">Amount</th>
+              <th className="px-5 py-3 text-center">Status</th>
+              <th className="px-5 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {confLoading ? (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-500">Loading...</td></tr>
+            ) : confirmations.length === 0 ? (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-500">No confirmations</td></tr>
+            ) : confirmations.map(c => (
+              <tr key={c.id} className="hover:bg-gray-50/50">
+                <td className="px-5 py-2.5 text-gray-500 text-xs whitespace-nowrap">{c.created_at?.slice(0, 10)}</td>
+                <td className="px-5 py-2.5 font-medium text-[#1B2B4B]">{c.merchant}</td>
+                <td className="px-5 py-2.5 text-gray-500 capitalize">{c.category || '-'}</td>
+                <td className="px-5 py-2.5 text-gray-500">{c.county || '-'}</td>
+                <td className="px-5 py-2.5 text-right font-mono font-medium text-[#1B2B4B]">
+                  {c.amount.toFixed(2)} {c.currency || 'RON'}
+                </td>
+                <td className="px-5 py-2.5 text-center">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                    c.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                    c.status === 'confirmed' ? 'bg-green-100 text-green-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {c.status}
+                  </span>
+                </td>
+                <td className="px-5 py-2.5 text-right">
+                  <button onClick={() => handleDeleteConf(c.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderConfirmationModal = () => (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold">Add Pending Confirmation</h2>
+          <button onClick={() => setIsCreatingConf(false)}><X size={20} /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Merchant</label>
+            <input className="w-full border p-2 rounded" value={confForm.merchant || ''} onChange={e => setConfForm({ ...confForm, merchant: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Amount</label>
+              <input type="number" step="0.01" className="w-full border p-2 rounded" value={confForm.amount || ''} onChange={e => setConfForm({ ...confForm, amount: parseFloat(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Currency</label>
+              <select className="w-full border p-2 rounded" value={confForm.currency || 'RON'} onChange={e => setConfForm({ ...confForm, currency: e.target.value })}>
+                <option value="RON">RON</option>
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+                <option value="GBP">GBP</option>
+                <option value="CHF">CHF</option>
+                <option value="HUF">HUF</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Category</label>
+            <select className="w-full border p-2 rounded" value={confForm.category || ''} onChange={e => setConfForm({ ...confForm, category: e.target.value })}>
+              <option value="">Select...</option>
+              <option value="Groceries">Groceries</option>
+              <option value="Food">Food</option>
+              <option value="Fuel">Fuel</option>
+              <option value="Entertainment">Entertainment</option>
+              <option value="Subscriptions">Subscriptions</option>
+              <option value="Shopping">Shopping</option>
+              <option value="Transport">Transport</option>
+              <option value="Health">Health</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Transfer">Transfer</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">City</label>
+              <input className="w-full border p-2 rounded" value={confForm.city || ''} onChange={e => setConfForm({ ...confForm, city: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">County</label>
+              <input className="w-full border p-2 rounded" value={confForm.county || ''} onChange={e => setConfForm({ ...confForm, county: e.target.value })} />
+            </div>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={() => setIsCreatingConf(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+          <button onClick={handleSaveConf} className="px-4 py-2 bg-[#FFD100] text-[#1B2B4B] font-semibold rounded-lg hover:brightness-105">Create Confirmation</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ──────────── RENDER ────────────
 
   return (
@@ -457,6 +646,7 @@ export function Admin() {
 
       {(isCreatingUser || editingUser) && renderUserModal()}
       {(isCreatingContact || editingContact) && renderContactModal()}
+      {isCreatingConf && renderConfirmationModal()}
     </div>
   );
 }

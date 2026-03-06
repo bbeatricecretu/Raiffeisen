@@ -15,6 +15,7 @@ import { Exchange } from './pages/Exchange';
 import { SendMoney } from './pages/SendMoney';
 import { Transactions } from './pages/Transactions';
 import { MerchantDetails } from './pages/MerchantDetails';
+import { Merchants } from './pages/Merchants';
 import { TransactionDetails } from './pages/TransactionDetails';
 import { Admin } from './pages/Admin';
 
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
       { path: 'send', element: <SendMoney /> },
       { path: 'transactions', element: <Transactions /> },
       { path: 'transaction/:id', element: <TransactionDetails /> },
+      { path: 'merchants', element: <Merchants /> },
       { path: 'merchant/:id', element: <MerchantDetails /> },
     ],
   },

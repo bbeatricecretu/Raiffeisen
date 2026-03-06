@@ -23,6 +23,7 @@ export function Dashboard() {
   const [chatInput, setChatInput] = useState('');
   const [balance, setBalance] = useState<number>(0);
   const [otherBalances, setOtherBalances] = useState<Record<string, number>>({});
+  const [topMerchant, setTopMerchant] = useState<{ name: string; total: number; count: number } | null>(null);
   const recent = transactions.slice(0, 6);
 
   useEffect(() => {
@@ -45,6 +46,23 @@ export function Dashboard() {
       }
     };
     fetchBalance();
+
+    // Compute top merchant from real transactions
+    const uid = localStorage.getItem('userId') || 'me';
+    api.getTransactions(uid, 500).then((txs: any[]) => {
+      const map = new Map<string, { total: number; count: number }>();
+      txs.forEach(t => {
+        const name = t.merchant_name;
+        if (!name) return;
+        const prev = map.get(name) || { total: 0, count: 0 };
+        map.set(name, { total: prev.total + (t.amount || 0), count: prev.count + 1 });
+      });
+      let best: { name: string; total: number; count: number } | null = null;
+      map.forEach((v, k) => {
+        if (!best || v.total > best.total) best = { name: k, ...v };
+      });
+      setTopMerchant(best);
+    }).catch(() => {});
   }, []);
 
   return (
@@ -168,7 +186,7 @@ export function Dashboard() {
             <div className="flex items-center justify-center gap-3">
               {[
                 { icon: Send, label: 'Send', onClick: () => navigate('/app/send') },
-                { icon: Users, label: 'Merchants', onClick: () => navigate('/app/merchant/emag') },
+                { icon: Users, label: 'Merchants', onClick: () => navigate('/app/merchants') },
                 { icon: ReceiptText, label: 'Transactions', onClick: () => navigate('/app/transactions') },
               ].map(action => (
                 <button
@@ -237,14 +255,14 @@ export function Dashboard() {
 
             <div
               className="bg-white rounded-2xl p-5 border border-border cursor-pointer hover:border-[#FFD100] hover:shadow-sm transition-all"
-              onClick={() => navigate('/app/merchant/emag')}
+              onClick={() => topMerchant ? navigate(`/app/merchant/${encodeURIComponent(topMerchant.name)}`) : undefined}
             >
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Top Merchant</span>
                 <ChevronRight size={14} className="text-muted-foreground" />
               </div>
-              <div className="font-bold text-[#1B2B4B] mt-2" style={{ fontSize: '18px' }}>Emag.ro</div>
-              <div className="text-muted-foreground mt-1" style={{ fontSize: '13px' }}>RON 2,100 total · 6 visits</div>
+              <div className="font-bold text-[#1B2B4B] mt-2" style={{ fontSize: '18px' }}>{topMerchant?.name || '—'}</div>
+              <div className="text-muted-foreground mt-1" style={{ fontSize: '13px' }}>{topMerchant ? `RON ${topMerchant.total.toLocaleString('ro-RO', { maximumFractionDigits: 0 })} total · ${topMerchant.count} visits` : 'No data'}</div>
               <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: '74%', background: '#FFD100' }} />
               </div>

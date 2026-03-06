@@ -124,6 +124,22 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 
+-- PENDING CONFIRMATIONS  (transactions awaiting user approval)
+CREATE TABLE IF NOT EXISTS pending_confirmations (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    merchant        TEXT NOT NULL,
+    amount          REAL NOT NULL,
+    currency        TEXT DEFAULT 'RON',
+    category        TEXT,
+    city            TEXT,
+    county          TEXT,
+    status          TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'rejected')),
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_confirmations_user ON pending_confirmations(user_id);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user        ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_merchant    ON transactions(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date        ON transactions(date);

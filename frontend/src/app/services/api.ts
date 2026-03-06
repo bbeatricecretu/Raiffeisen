@@ -281,4 +281,64 @@ export const api = {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
+
+  // --- Pending Confirmations ---
+
+  getUserConfirmations: async (userId: string, status?: string) => {
+    const url = status
+      ? `${API_BASE_URL}/users/${userId}/confirmations?status=${status}`
+      : `${API_BASE_URL}/users/${userId}/confirmations`;
+    const res = await fetch(url);
+    return res.json();
+  },
+
+  createConfirmation: async (data: { user_id: string, merchant: string, amount: number, currency?: string, category?: string, city?: string, county?: string }) => {
+    const res = await fetch(`${API_BASE_URL}/confirmations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  updateConfirmationStatus: async (confId: string, status: 'confirmed' | 'rejected') => {
+    const res = await fetch(`${API_BASE_URL}/confirmations/${confId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  deleteConfirmation: async (confId: string) => {
+    const res = await fetch(`${API_BASE_URL}/confirmations/${confId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getMerchantStats: async (userId: string, merchantName: string) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/merchant-stats/${encodeURIComponent(merchantName)}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getTransaction: async (txId: string) => {
+    const res = await fetch(`${API_BASE_URL}/transactions/${txId}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getMerchantDetail: async (userId: string, merchantName: string) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/merchant-detail/${encodeURIComponent(merchantName)}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getUserMerchants: async (userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/merchants`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
 };

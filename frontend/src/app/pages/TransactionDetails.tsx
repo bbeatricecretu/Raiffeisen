@@ -1,9 +1,11 @@
-import { ArrowLeft, MapPin, ReceiptText, Store, Calendar, CreditCard, TrendingUp, Hash, CheckCircle, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, MapPin, ReceiptText, Store, Calendar, CreditCard, TrendingUp, Hash, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { transactions } from '../services/mockData';
+import { api } from '../services/api';
 
 // Fix leaflet default icon
 // @ts-ignore
@@ -23,16 +25,100 @@ const CATEGORY_COLORS: Record<string, string> = {
     'Health': '#22C55E',
     'Utilities': '#64748B',
     'Entertainment': '#F97316',
+    'Exchange': '#1B2B4B',
 };
 
-function merchantSlug(name: string) {
-    return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
+    'Cluj-Napoca': { lat: 46.77, lon: 23.60 },
+    'Cluj': { lat: 46.77, lon: 23.60 },
+    'Bucharest': { lat: 44.43, lon: 26.10 },
+    'București': { lat: 44.43, lon: 26.10 },
+    'Timișoara': { lat: 45.75, lon: 21.23 },
+    'Timisoara': { lat: 45.75, lon: 21.23 },
+    'Iași': { lat: 47.16, lon: 27.58 },
+    'Iasi': { lat: 47.16, lon: 27.58 },
+    'Brașov': { lat: 45.65, lon: 25.60 },
+    'Brasov': { lat: 45.65, lon: 25.60 },
+    'Constanța': { lat: 44.17, lon: 28.63 },
+    'Constanta': { lat: 44.17, lon: 28.63 },
+    'Craiova': { lat: 44.32, lon: 23.80 },
+    'Oradea': { lat: 47.05, lon: 21.92 },
+    'Sibiu': { lat: 45.80, lon: 24.15 },
+    'Suceava': { lat: 47.63, lon: 26.26 },
+    'Galați': { lat: 45.43, lon: 28.05 },
+    'Ploiești': { lat: 44.94, lon: 26.03 },
+    'Pitești': { lat: 44.86, lon: 24.87 },
+    'Arad': { lat: 46.17, lon: 21.32 },
+    'Buzău': { lat: 45.15, lon: 26.83 },
+    'Online': { lat: 46.77, lon: 23.60 },
+};
+
+// Normalized tx shape used by the component
+interface NormalizedTx {
+    id: string;
+    merchant: string;
+    amount: number;
+    currency: string;
+    date: string;
+    category: string;
+    county: string;
+    city: string;
+    lat: number;
+    lon: number;
+    status: string;
 }
 
 export function TransactionDetails() {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
-    const tx = transactions.find(t => t.id === id);
+    const [tx, setTx] = useState<NormalizedTx | null>(null);
+    const [merchantStats, setMerchantStats] = useState<{ totalAtMerchant: number; visitCount: number; avgSpend: number; lastVisit: string } | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!id) { setLoading(false); return; }
+
+        // Try mock first
+        const mockTx = transactions.find(t => t.id === id);
+        if (mockTx) {
+            setTx({
+                id: mockTx.id, merchant: mockTx.merchant, amount: mockTx.amount, currency: 'RON',
+                date: mockTx.date, category: mockTx.category, county: mockTx.county,
+                city: '', lat: mockTx.lat, lon: mockTx.lon, status: mockTx.status,
+            });
+            setMerchantStats({ totalAtMerchant: mockTx.totalAtMerchant, visitCount: mockTx.visitCount, avgSpend: mockTx.avgSpend, lastVisit: mockTx.lastVisit });
+            setLoading(false);
+            return;
+        }
+
+        // Fetch from API
+        api.getTransaction(id).then(apiTx => {
+            const city = apiTx.city || 'Online';
+            const coords = CITY_COORDS[city] || CITY_COORDS['Online'] || { lat: 46.77, lon: 23.60 };
+            setTx({
+                id: apiTx.id, merchant: apiTx.merchant_name, amount: apiTx.amount,
+                currency: apiTx.currency || 'RON', date: apiTx.date,
+                category: apiTx.category || 'General', county: apiTx.county || '',
+                city: apiTx.city || '', lat: coords.lat, lon: coords.lon,
+                status: 'completed',
+            });
+            // Fetch merchant stats
+            const userId = localStorage.getItem('userId') || apiTx.user_id;
+            return api.getMerchantStats(userId, apiTx.merchant_name);
+        }).then(stats => {
+            setMerchantStats({ totalAtMerchant: stats.total_spent, visitCount: stats.visit_count, avgSpend: stats.avg_spend, lastVisit: stats.last_visit || '-' });
+        }).catch(() => {
+            setMerchantStats(null);
+        }).finally(() => setLoading(false));
+    }, [id]);
+
+    if (loading) {
+        return (
+            <div className="p-6 max-w-4xl mx-auto flex items-center justify-center min-h-[400px]">
+                <RefreshCw size={28} className="animate-spin text-[#1B2B4B]" />
+            </div>
+        );
+    }
 
     if (!tx) {
         return (
@@ -45,8 +131,8 @@ export function TransactionDetails() {
         );
     }
 
-    const isPositive = tx.amount < 0 === false;
-    const formattedAmount = `${isPositive ? '+' : '-'} RON ${Math.abs(tx.amount).toFixed(2)}`;
+    const isPositive = tx.amount < 0;
+    const formattedAmount = `${isPositive ? '+' : '-'} ${tx.currency} ${Math.abs(tx.amount).toFixed(2)}`;
     const formattedDate = new Date(tx.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const catColor = CATEGORY_COLORS[tx.category] || '#94A3B8';
 
@@ -133,8 +219,8 @@ export function TransactionDetails() {
                                     <CreditCard size={16} className="text-[#1B2B4B]" />
                                 </div>
                                 <div>
-                                    <div className="text-muted-foreground uppercase tracking-wider font-semibold" style={{ fontSize: '10px' }}>IBAN</div>
-                                    <div className="font-semibold text-[#1B2B4B] font-mono" style={{ fontSize: '12px' }}>{tx.iban.slice(0, 12)}…</div>
+                                    <div className="text-muted-foreground uppercase tracking-wider font-semibold" style={{ fontSize: '10px' }}>Location</div>
+                                    <div className="font-semibold text-[#1B2B4B]" style={{ fontSize: '13px' }}>{tx.city}</div>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -187,23 +273,25 @@ export function TransactionDetails() {
                             <h3 className="font-semibold text-[#1B2B4B]" style={{ fontSize: '15px' }}>With this Merchant</h3>
                         </div>
                         <div className="divide-y divide-border">
-                            {[
-                                { label: 'Total Spent', value: `RON ${tx.totalAtMerchant.toLocaleString()}` },
-                                { label: 'Visits', value: `${tx.visitCount} transactions` },
-                                { label: 'Avg. Spent', value: `RON ${tx.avgSpend}` },
-                                { label: 'Last Visit', value: new Date(tx.lastVisit).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) },
+                            {merchantStats ? [
+                                { label: 'Total Spent', value: `RON ${merchantStats.totalAtMerchant.toLocaleString()}` },
+                                { label: 'Visits', value: `${merchantStats.visitCount} transactions` },
+                                { label: 'Avg. Spent', value: `RON ${merchantStats.avgSpend}` },
+                                { label: 'Last Visit', value: new Date(merchantStats.lastVisit).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) },
                             ].map(row => (
                                 <div key={row.label} className="px-5 py-3.5 flex items-center justify-between">
                                     <span className="text-muted-foreground" style={{ fontSize: '13px' }}>{row.label}</span>
                                     <span className="font-bold text-[#1B2B4B]" style={{ fontSize: '13px' }}>{row.value}</span>
                                 </div>
-                            ))}
+                            )) : (
+                                <div className="px-5 py-6 text-center text-muted-foreground text-sm">Loading stats…</div>
+                            )}
                         </div>
                     </div>
 
                     {/* Go to merchant page */}
                     <button
-                        onClick={() => navigate(`/app/merchant/${merchantSlug(tx.merchant)}`)}
+                        onClick={() => navigate(`/app/merchant/${encodeURIComponent(tx.merchant)}`)}
                         className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-semibold transition-all hover:brightness-105 shadow-sm"
                         style={{ background: '#FFD100', color: '#1B2B4B', fontSize: '14px' }}
                     >
