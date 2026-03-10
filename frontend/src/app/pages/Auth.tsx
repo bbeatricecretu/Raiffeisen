@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { Eye, EyeOff, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -15,7 +15,18 @@ const initialField = (): FieldState => ({ value: '', touched: false });
 
 export function Auth() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<Mode>('signup');
+  const location = useLocation();
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const referralInviteId = searchParams.get('rid') || undefined;
+  const referredEmail = searchParams.get('email') || '';
+  const hasReferral = Boolean(searchParams.get('ref') || referralInviteId);
+
+  const [mode, setMode] = useState<Mode>(() => {
+    const modeParam = searchParams.get('mode');
+    if (modeParam === 'login') return 'login';
+    if (modeParam === 'signup' || hasReferral) return 'signup';
+    return 'signup';
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [allowOnline, setAllowOnline] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
@@ -30,6 +41,18 @@ export function Auth() {
     career: initialField(),
     phone: initialField(),
   });
+
+  useEffect(() => {
+    if (!referredEmail) return;
+    setFields(prev => ({
+      ...prev,
+      email: {
+        value: referredEmail,
+        touched: true,
+        error: validate('email', referredEmail),
+      }
+    }));
+  }, [referredEmail]);
 
   const validate = (name: string, value: string): string | undefined => {
     switch (name) {
@@ -103,7 +126,8 @@ export function Auth() {
         name: fields.fullName.value,
         email: fields.email.value,
         password: fields.password.value,
-        phone: fields.phone.value
+        phone: fields.phone.value,
+        referral_invite_id: referralInviteId,
       });
       setIsLoading(false);
       setSubmitted(true);

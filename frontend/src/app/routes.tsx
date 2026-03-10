@@ -10,6 +10,7 @@ import { ConfirmTransaction } from './pages/ConfirmTransaction';
 import { Invite } from './pages/Invite';
 import { JoinCommunity } from './pages/JoinCommunity';
 import { CommunityFeed } from './pages/CommunityFeed';
+import { CommunityHome } from './pages/CommunityHome';
 import { AccountDetails } from './pages/AccountDetails';
 import { Exchange } from './pages/Exchange';
 import { SendMoney } from './pages/SendMoney';
@@ -50,6 +51,7 @@ export const router = createBrowserRouter([
       { path: 'confirm', element: <ConfirmTransaction /> },
       { path: 'invite', element: <Invite /> },
       { path: 'join', element: <JoinCommunity /> },
+      { path: 'community', element: <CommunityHome /> },
       { path: 'community/:id', element: <CommunityFeed /> },
       { path: 'details', element: <AccountDetails /> },
       { path: 'exchange', element: <Exchange /> },

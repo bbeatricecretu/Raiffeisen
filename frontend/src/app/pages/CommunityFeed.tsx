@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Heart, MessageCircle, Share2, Plus, X, Image, Send, Users, Globe, Shield, ChevronDown, MoreHorizontal, Bookmark } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router';
+import { Heart, MessageCircle, Share2, Plus, X, Image, Send, Users, Globe, Shield, ChevronDown, MoreHorizontal, Bookmark, Copy, Check } from 'lucide-react';
 import { communities, currentUser, type FeedPost } from '../services/mockData';
 import { api } from '../services/api';
 
@@ -122,19 +123,23 @@ function PostCard({ post, onLike, onComment }: { post: FeedPost; onLike: (id: st
 }
 
 export function CommunityFeed() {
+  const { id: teamIdFromRoute } = useParams();
+  const navigate = useNavigate();
   const [currentCommunity, setCurrentCommunity] = useState<any>(communities[0]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [newPost, setNewPost] = useState({ title: '', content: '' });
   const [loading, setLoading] = useState(true);
   const [currentUserData, setCurrentUserData] = useState(currentUser);
+  const [activeTeamId, setActiveTeamId] = useState<string>('');
+  const [copiedCode, setCopiedCode] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (stored) {
       try {
         const u = JSON.parse(stored);
-        setCurrentUserData(prev => ({ ...prev, name: u.name, id: u.id, email: u.email }));
+        setCurrentUserData(prev => ({ ...prev, name: u.name, id: u.id, email: u.email, avatar: prev.avatar }));
       } catch {}
     }
   }, []);
@@ -142,35 +147,41 @@ export function CommunityFeed() {
   // Fetch user's teams + posts from first team
   useEffect(() => {
     async function loadData() {
-      // Use currentUserData.id BUT since useEffect runs on mount, and currentUserData updates async, 
-      // we should use a derived ID or wait. Actually, let's just grab from localStorage directly here too for safety or depend on currentUserData.id
-      // However, initial render will have mock ID. Let's depend on currentUserData.
-      const realId = currentUserData.id;
+      const realId = localStorage.getItem('userId') || currentUserData.id;
       
       try {
         const userTeams = await api.getUserTeams(realId);
         if (userTeams && userTeams.length > 0) {
-          const firstTeam = userTeams[0];
+          const selectedTeam = userTeams.find((t: any) => t.id === teamIdFromRoute) || userTeams[0];
+          setActiveTeamId(selectedTeam.id);
           // Map backend team to frontend structure if needed, or use as is
           // We'll stick to a simple mapping
+          const matchedMock = communities.find((c) => c.name === selectedTeam.name) || communities[0];
           const communityData = {
-            ...communities[0], // fallback metadata
-            id: firstTeam.id,
-            name: firstTeam.name,
-            teamCode: firstTeam.code
+            ...matchedMock,
+            id: selectedTeam.id,
+            name: selectedTeam.name,
+            teamCode: selectedTeam.code
           };
           setCurrentCommunity(communityData);
           
-          const teamPosts = await api.getTeamPosts(firstTeam.id);
+          const teamPosts = await api.getTeamPosts(selectedTeam.id, realId);
           // Transform backend posts to FeedPost
           const mappedPosts: FeedPost[] = teamPosts.map((p: any) => ({
             id: p.id,
-            author: { ...currentUser, name: p.author_name || 'Unknown' }, // Simplified author mapping
+            author: {
+              ...currentUser,
+              id: p.user_id,
+              name: p.author_name || 'Unknown',
+              avatar: currentUser.avatar,
+            },
             title: p.title || 'Untitled',
             content: p.text || '',
             image: p.image_url,
-            likes: p.reactions ? p.reactions.length : 0, // Simplified
-            comments: p.comments_count || 0,
+            likes: Array.isArray(p.reactions)
+              ? p.reactions.reduce((sum: number, r: any) => sum + Number(r.count || 0), 0)
+              : 0,
+            comments: Number(p.comments_count || 0),
             shares: 0,
             time: new Date(p.created_at).toLocaleDateString(),
             isLiked: false
@@ -178,6 +189,7 @@ export function CommunityFeed() {
           setPosts(mappedPosts);
         } else {
           // No teams? Use mock default posts or empty
+          setActiveTeamId('');
           setPosts([]);
         }
       } catch (e) {
@@ -187,14 +199,14 @@ export function CommunityFeed() {
       }
     }
     loadData();
-  }, []);
+  }, [teamIdFromRoute, currentUserData.id]);
 
   const handleLike = async (id: string, currentlyLiked: boolean) => {
     // Optimistic update
     setPosts(prev => prev.map(p => p.id === id ? { ...p, isLiked: !p.isLiked, likes: p.isLiked ? p.likes - 1 : p.likes + 1 } : p));
     try {
       if (!currentlyLiked) {
-        await api.reactToPost(id, currentUserData.id, '❤️');
+        await api.reactToPost(id, localStorage.getItem('userId') || currentUserData.id, '❤️');
       }
       // If unliking, current API doesn't support 'delete reaction' easily without ID, so just ignore for demo
     } catch (e) {
@@ -204,7 +216,7 @@ export function CommunityFeed() {
 
   const handleComment = async (id: string, text: string) => {
     try {
-      await api.commentOnPost(id, currentUserData.id, text);
+      await api.commentOnPost(id, localStorage.getItem('userId') || currentUserData.id, text);
       // Increment comment count locally
       setPosts(prev => prev.map(p => p.id === id ? { ...p, comments: p.comments + 1 } : p));
     } catch (e) {
@@ -213,11 +225,11 @@ export function CommunityFeed() {
   };
 
   const handleCreatePost = async () => {
-    if (!newPost.title.trim() || !newPost.content.trim()) return;
+    if (!newPost.title.trim() || !newPost.content.trim() || !activeTeamId) return;
     try {
       const created = await api.createPost({
-        team_id: currentCommunity.id,
-        user_id: currentUserData.id,
+        team_id: activeTeamId,
+        user_id: localStorage.getItem('userId') || currentUserData.id,
         title: newPost.title,
         text: newPost.content
       });
@@ -240,7 +252,38 @@ export function CommunityFeed() {
     }
   };
 
+  const copyTeamCode = async () => {
+    if (!currentCommunity?.teamCode) return;
+    try {
+      await navigator.clipboard.writeText(currentCommunity.teamCode);
+      setCopiedCode(true);
+      window.setTimeout(() => setCopiedCode(false), 1600);
+    } catch {
+      // no-op
+    }
+  };
+
   if (loading) return <div className="p-6">Loading feed...</div>;
+
+  if (!activeTeamId) {
+    return (
+      <div className="p-6">
+        <div className="bg-white rounded-2xl border border-border p-8 text-center">
+          <h3 className="text-[#1B2B4B] font-semibold mb-2">No community joined yet</h3>
+          <p className="text-muted-foreground mb-4" style={{ fontSize: '13px' }}>
+            Join a community first to access the feed and post updates.
+          </p>
+          <button
+            onClick={() => navigate('/app/join')}
+            className="px-5 py-2.5 rounded-xl font-semibold"
+            style={{ background: '#FFD100', color: '#1B2B4B' }}
+          >
+            Go to Join Community
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full" style={{ height: 'calc(100vh - 64px)' }}>
@@ -272,6 +315,27 @@ export function CommunityFeed() {
               </div>
             ))}
           </div>
+
+          {currentCommunity.teamCode && (
+            <div className="rounded-xl border border-border p-2.5 bg-muted/30">
+              <div className="text-muted-foreground mb-1" style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                Team Code
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-[#1B2B4B] font-mono" style={{ fontSize: '12px', fontWeight: 700 }}>
+                  {currentCommunity.teamCode}
+                </code>
+                <button
+                  onClick={copyTeamCode}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold"
+                  style={{ background: '#FFD100', color: '#1B2B4B' }}
+                >
+                  {copiedCode ? <Check size={12} /> : <Copy size={12} />}
+                  {copiedCode ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

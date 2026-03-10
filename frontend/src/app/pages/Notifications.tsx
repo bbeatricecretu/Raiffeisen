@@ -10,6 +10,10 @@ type NotificationItem = {
   subtitle: string;
   when: string;
   kind: 'warning' | 'info' | 'success';
+  action?: {
+    inviteId: string;
+    senderId: string;
+  };
 };
 
 export function Notifications() {
@@ -52,6 +56,21 @@ export function Notifications() {
       }
 
       try {
+        const connectionInvites = await api.getConnectionInvites(userId, 'pending');
+        const inviteItems = Array.isArray(connectionInvites)
+          ? connectionInvites.slice(0, 20).map((invite: any) => ({
+              id: `connect-${invite.id}`,
+              title: `${invite.sender_name || 'Someone'} sent you a connection invite`,
+              subtitle: invite.sender_career || 'Tap to accept and connect.',
+              when: invite.created_at || 'Recently',
+              kind: 'info' as const,
+              action: {
+                inviteId: invite.id,
+                senderId: invite.sender_id,
+              },
+            }))
+          : [];
+
         const pending = await api.getUserConfirmations(userId, 'pending');
         const pendingItems = Array.isArray(pending)
           ? pending.slice(0, 20).map((conf: any) => ({
@@ -80,7 +99,7 @@ export function Notifications() {
           },
         ];
 
-        setItems([...pendingItems, ...staticItems]);
+        setItems([...inviteItems, ...pendingItems, ...staticItems]);
       } catch (error) {
         console.error('Failed to load notifications', error);
         setItems([]);
@@ -96,6 +115,16 @@ export function Notifications() {
     if (kind === 'warning') return <CircleAlert size={18} className="text-amber-500" />;
     if (kind === 'success') return <CheckCircle2 size={18} className="text-emerald-500" />;
     return <Bell size={18} className="text-[#1B2B4B]/70" />;
+  };
+
+  const handleInviteAction = async (inviteId: string, status: 'accepted' | 'rejected') => {
+    const userId = localStorage.getItem('userId') || 'me';
+    try {
+      await api.respondConnectionInvite(inviteId, userId, status);
+      setItems((prev) => prev.filter((it) => it.action?.inviteId !== inviteId));
+    } catch (error) {
+      console.error('Failed to respond to invite', error);
+    }
   };
 
   return (
@@ -144,6 +173,23 @@ export function Notifications() {
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-[#1B2B4B]" style={{ fontSize: '14px' }}>{item.title}</div>
                   <div className="text-muted-foreground mt-0.5" style={{ fontSize: '13px' }}>{item.subtitle}</div>
+                  {item.action && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={() => handleInviteAction(item.action!.inviteId, 'accepted')}
+                        className="px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                        style={{ background: '#FFD100', color: '#1B2B4B' }}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleInviteAction(item.action!.inviteId, 'rejected')}
+                        className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border border-border text-muted-foreground hover:text-[#1B2B4B]"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 text-muted-foreground shrink-0" style={{ fontSize: '12px' }}>
                   <Clock3 size={13} />

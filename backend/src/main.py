@@ -21,6 +21,7 @@ class RegisterRequest(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     agreed: bool = False
+    referral_invite_id: Optional[str] = None
 
 class LoginRequest(BaseModel):
     email: str
@@ -30,6 +31,7 @@ class CreateTeamRequest(BaseModel):
     name: str
     created_by: str
     image_url: Optional[str] = ""
+    code: Optional[str] = None
 
 class JoinTeamRequest(BaseModel):
     user_id: str
@@ -130,6 +132,19 @@ class UserPreferencesRequest(BaseModel):
     push_alerts: bool
     hide_small_amounts: bool
 
+class ConnectionInviteRequest(BaseModel):
+    sender_id: str
+    recipient_id: str
+
+class ConnectionInviteResponseRequest(BaseModel):
+    recipient_id: str
+    status: str  # accepted | rejected
+
+class ReferralInviteCreateRequest(BaseModel):
+    inviter_id: str
+    channel: str  # link | email
+    invitee_email: Optional[str] = None
+
 class AdminUserUpdateRequest(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
@@ -221,6 +236,14 @@ async def register(req: RegisterRequest):
         phone=req.phone,
         agreed=req.agreed
     )
+
+    if req.referral_invite_id:
+        try:
+            db.mark_referral_joined(req.referral_invite_id, user["id"], req.email or "")
+        except ValueError:
+            # Keep registration successful even if referral link is invalid for this email.
+            pass
+
     return user
 
 @app.post("/api/auth/login")
@@ -649,7 +672,7 @@ async def get_user_teams(user_id: str):
 @app.post("/api/teams")
 async def create_team(req: CreateTeamRequest):
     db = get_db()
-    return db.create_team(req.name, req.created_by, req.image_url)
+    return db.create_team(req.name, req.created_by, req.image_url, req.code)
 
 @app.post("/api/teams/join")
 async def join_team(req: JoinTeamRequest):
@@ -660,8 +683,10 @@ async def join_team(req: JoinTeamRequest):
     return result
 
 @app.get("/api/teams/{team_id}/posts")
-async def get_team_posts(team_id: str):
+async def get_team_posts(team_id: str, user_id: str):
     db = get_db()
+    if not db.is_team_member(user_id, team_id):
+        raise HTTPException(status_code=403, detail="Only community members can view this feed")
     posts = db.get_team_posts(team_id)
     # Enrich with counts
     for post in posts:
@@ -669,9 +694,23 @@ async def get_team_posts(team_id: str):
         post['reactions'] = db.get_post_reactions(post['id'])
     return posts
 
+@app.get("/api/community/feed")
+async def get_community_feed(user_id: str, limit: int = 100):
+    db = get_db()
+    posts = db.get_contact_network_posts(user_id, limit=limit)
+
+    for post in posts:
+        comments = db.get_post_comments(post['id'])
+        post['comments_count'] = len([c for c in comments if c.get('text')])
+        post['reactions'] = db.get_post_reactions(post['id'])
+
+    return posts
+
 @app.post("/api/posts")
 async def create_post(req: CreatePostRequest):
     db = get_db()
+    if not db.is_team_member(req.user_id, req.team_id):
+        raise HTTPException(status_code=403, detail="Only community members can post")
     return db.create_post(
         team_id=req.team_id,
         user_id=req.user_id, 
@@ -683,27 +722,98 @@ async def create_post(req: CreatePostRequest):
 @app.post("/api/posts/{post_id}/react")
 async def react_to_post(post_id: str, req: ReactRequest):
     db = get_db()
-    # Storing reaction as a comment with type 'reaction' or just a comment with emoji for now, 
-    # dependent on DB schema. Assuming create_comment handles it or we have a specialized reactions table.
-    # If DB client doesn't have create_reaction, user asked for "Reactions".
-    # Let's assume we use create_comment for simplicity if schema allows, or just a mock for now.
-    # Looking at schema.sql (implied), likely separate or comments.
-    
-    # Check if database_client has create_reaction. 
-    # If not, we might need to add it or use comment.
-    # For now, let's treat it as a comment with a special flag if needed, 
-    # OR if the user didn't specify, just return success.
-    
-    # Actually, earlier I saw "get_post_reactions" in my proposed code. 
-    # Does db_client have it? I should check.
-    # I'll stick to what I know exists or is easily addable.
-    # Using create_comment for now as a fallback to ensure runtime safety.
-    return db.create_comment(post_id, req.user_id, text=req.emoji)
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if not db.is_team_member(req.user_id, post["team_id"]):
+        raise HTTPException(status_code=403, detail="Only community members can react")
+    return db.create_comment(post_id, req.user_id, emoji=req.emoji)
 
 @app.post("/api/posts/{post_id}/comment")
 async def comment_on_post(post_id: str, req: CommentRequest):
     db = get_db()
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if not db.is_team_member(req.user_id, post["team_id"]):
+        raise HTTPException(status_code=403, detail="Only community members can comment")
     return db.create_comment(post_id, req.user_id, text=req.text)
+
+@app.post("/api/connections/invites")
+async def create_connection_invite(req: ConnectionInviteRequest):
+    db = get_db()
+    if not db.get_user(req.sender_id):
+        raise HTTPException(status_code=404, detail="Sender not found")
+    if not db.get_user(req.recipient_id):
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    try:
+        return db.create_connection_invite(req.sender_id, req.recipient_id)
+    except ValueError as e:
+        message = str(e)
+        if message == "Users are already connected":
+            raise HTTPException(status_code=409, detail=message)
+        raise HTTPException(status_code=400, detail=message)
+
+@app.get("/api/users/{user_id}/connection-invites")
+async def get_connection_invites(user_id: str, status: Optional[str] = None):
+    db = get_db()
+    if not db.get_user(user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.get_user_connection_invites(user_id, status=status)
+
+@app.put("/api/connections/invites/{invite_id}")
+async def respond_connection_invite(invite_id: str, req: ConnectionInviteResponseRequest):
+    db = get_db()
+    if req.status not in ("accepted", "rejected"):
+        raise HTTPException(status_code=400, detail="Status must be 'accepted' or 'rejected'")
+    try:
+        updated = db.respond_connection_invite(invite_id, req.recipient_id, req.status)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not updated:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    return updated
+
+@app.get("/api/users/{user_id}/suggested-connections")
+async def get_suggested_connections(user_id: str, limit: int = 24):
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.get_suggested_connections(user_id, limit=limit)
+
+
+@app.post("/api/referrals/invites")
+async def create_referral_invite(req: ReferralInviteCreateRequest):
+    db = get_db()
+    inviter = db.get_user(req.inviter_id)
+    if not inviter:
+        raise HTTPException(status_code=404, detail="Inviter not found")
+    try:
+        return db.create_referral_invite(req.inviter_id, req.channel, req.invitee_email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/users/{user_id}/referral-stats")
+async def get_referral_stats(user_id: str):
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.get_referral_stats(user_id)
+
+
+@app.get("/api/users/{user_id}/connections")
+async def get_user_connections(user_id: str):
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.get_user_mutual_connections(user_id)
 
 # --- Contacts CRUD ---
 

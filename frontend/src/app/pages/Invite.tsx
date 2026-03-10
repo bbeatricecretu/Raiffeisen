@@ -3,43 +3,139 @@ import { Search, UserPlus, Check, Copy, Share2, MessageCircle, Link2, Users } fr
 import { api } from '../services/api';
 import { platformUsers } from '../services/mockData';
 
-const REFERRAL_LINK = 'https://connectgrow.ro/ref/ALEX2024';
-
 export function Invite() {
+  const currentUserId = localStorage.getItem('userId') || 'me';
+  const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const envBaseUrl = (import.meta as any)?.env?.VITE_PUBLIC_APP_URL as string | undefined;
+  const appBaseUrl = envBaseUrl
+    ? envBaseUrl.replace(/\/$/, '')
+    : (runtimeOrigin || 'http://localhost:5173');
+  const defaultReferralLink = `${appBaseUrl}/auth?mode=signup&ref=${encodeURIComponent(currentUserId)}`;
   const [searchQuery, setSearchQuery] = useState('');
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
   const [users, setUsers] = useState<any[]>(platformUsers);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [connections, setConnections] = useState<any[]>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [referralLink, setReferralLink] = useState(defaultReferralLink);
+  const [stats, setStats] = useState({ invites_sent: 0, joined: 0, pending: 0 });
+
+  const loadReferralStats = async () => {
+    try {
+      const data = await api.getReferralStats(currentUserId);
+      setStats({
+        invites_sent: Number(data?.invites_sent || 0),
+        joined: Number(data?.joined || 0),
+        pending: Number(data?.pending || 0),
+      });
+    } catch (e) {
+      console.error('Failed to load referral stats', e);
+      setStats({ invites_sent: 0, joined: 0, pending: 0 });
+    }
+  };
 
   useEffect(() => {
     if (searchQuery.length > 2) {
       api.searchUsers(searchQuery).then(res => {
-        // Map backend fields to frontend UI expected fields if needed
-        // Backend: id, name, email, phone, career, location
-        // Frontend mock: id, name, career, location, mutual (missing in backend)
-        setUsers(res.map((u: any) => ({
-             ...u, 
-             mutual: Math.floor(Math.random() * 10),
-             avatar: `https://ui-avatars.com/api/?name=${u.name}&background=random`
-        })));
+        setUsers(res
+          .filter((u: any) => u.id !== currentUserId)
+          .map((u: any) => ({
+            ...u,
+            mutual: Math.floor(Math.random() * 10),
+            avatar: `https://ui-avatars.com/api/?name=${u.name}&background=random`,
+            isOnline: true,
+          }))
+        );
       });
     } else {
-        setUsers(platformUsers);
+      api.getSuggestedConnections(currentUserId, 24)
+        .then((res) => {
+          setUsers(res.map((u: any) => ({
+            ...u,
+            mutual: Math.floor(Math.random() * 10),
+            avatar: `https://ui-avatars.com/api/?name=${u.name}&background=random`,
+            isOnline: true,
+          })));
+        })
+        .catch(() => {
+          setUsers(platformUsers);
+        });
     }
-  }, [searchQuery]);
+  }, [searchQuery, currentUserId]);
 
-  const sendRequest = (id: string) => {
-    setSentRequests(prev => new Set([...prev, id]));
+  useEffect(() => {
+    const loadConnections = async () => {
+      setConnectionsLoading(true);
+      try {
+        const data = await api.getUserConnections(currentUserId);
+        setConnections(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error('Failed to load connections', e);
+        setConnections([]);
+      } finally {
+        setConnectionsLoading(false);
+      }
+    };
+
+    loadConnections();
+  }, [currentUserId]);
+
+  useEffect(() => {
+    loadReferralStats();
+    const interval = window.setInterval(loadReferralStats, 10000);
+    return () => window.clearInterval(interval);
+  }, [currentUserId]);
+
+  const sendRequest = async (user: any) => {
+    try {
+      await api.sendConnectionInvite(currentUserId, user.id);
+      setSentRequests(prev => new Set([...prev, user.id]));
+    } catch (e) {
+      console.error('Failed to connect with user', e);
+    }
   };
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(REFERRAL_LINK).catch(() => { });
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const createTrackedReferralLink = async (channel: 'link' | 'email', email?: string) => {
+    const invite = await api.createReferralInvite(currentUserId, channel, email);
+    const rid = invite?.id;
+    const url = `${appBaseUrl}/auth?mode=signup&ref=${encodeURIComponent(currentUserId)}${rid ? `&rid=${encodeURIComponent(rid)}` : ''}${email ? `&email=${encodeURIComponent(email)}` : ''}`;
+    setReferralLink(url);
+    await loadReferralStats();
+    return url;
   };
 
-  const shareWhatsApp = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(`Join me on Connect & Grow — Romania's best fintech community! ${REFERRAL_LINK}`)}`, '_blank');
+  const copyLink = async () => {
+    try {
+      const link = await createTrackedReferralLink('link');
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error('Failed to create/copy referral link', e);
+    }
+  };
+
+  const shareWhatsApp = async () => {
+    try {
+      const link = await createTrackedReferralLink('link');
+      window.open(`https://wa.me/?text=${encodeURIComponent(`Join me on Connect & Grow! Create your account here: ${link}`)}`, '_blank');
+    } catch (e) {
+      console.error('Failed to create WhatsApp referral invite', e);
+    }
+  };
+
+  const sendEmailInvite = async () => {
+    if (!inviteEmail.trim()) return;
+    try {
+      const link = await createTrackedReferralLink('email', inviteEmail.trim());
+      const subject = encodeURIComponent('Join me on Connect & Grow');
+      const body = encodeURIComponent(`Hi,\n\nI invited you to Connect & Grow. Use this signup link: ${link}\n\nSee you there!`);
+      window.open(`mailto:${inviteEmail.trim()}?subject=${subject}&body=${body}`, '_blank');
+      setInviteEmail('');
+    } catch (e) {
+      console.error('Failed to create email referral invite', e);
+    }
   };
 
   return (
@@ -54,10 +150,10 @@ export function Invite() {
               <Share2 size={18} className="text-[#FFD100]" />
               <h3 className="text-white font-semibold" style={{ fontSize: '15px' }}>Your Referral Link</h3>
             </div>
-            <p className="text-white/60 mb-4" style={{ fontSize: '13px' }}>Invite friends and earn RON 50 for each successful referral.</p>
+            <p className="text-white/60 mb-4" style={{ fontSize: '13px' }}>Invite friends to join Connect &amp; Grow with your personal signup link.</p>
             <div className="flex items-center gap-2 bg-white/10 rounded-xl px-3 py-2.5 mb-4">
               <Link2 size={13} className="text-[#FFD100] shrink-0" />
-              <span className="flex-1 text-white/80 font-mono truncate" style={{ fontSize: '12px' }}>{REFERRAL_LINK}</span>
+              <span className="flex-1 text-white/80 font-mono truncate" style={{ fontSize: '12px' }}>{referralLink}</span>
             </div>
             <div className="flex gap-2">
               <button
@@ -81,12 +177,11 @@ export function Invite() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: 'Invites Sent', value: '12', icon: UserPlus, color: '#FFD100' },
-            { label: 'Joined', value: '7', icon: Users, color: '#10B981' },
-            { label: 'Pending', value: '5', icon: Share2, color: '#FFD100' },
-            { label: 'Earned', value: 'RON 350', icon: Check, color: '#1B2B4B' },
+            { label: 'Invites Sent', value: String(stats.invites_sent), icon: UserPlus, color: '#FFD100' },
+            { label: 'Signed Up', value: String(stats.joined), icon: Users, color: '#10B981' },
+            { label: 'Pending', value: String(stats.pending), icon: Share2, color: '#FFD100' },
           ].map(stat => (
             <div key={stat.label} className="bg-white rounded-2xl p-4 border border-border">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-2" style={{ background: stat.color + '20' }}>
@@ -132,7 +227,7 @@ export function Invite() {
                     )}
                   </div>
                   <button
-                    onClick={() => sendRequest(user.id)}
+                    onClick={() => sendRequest(user)}
                     disabled={sentRequests.has(user.id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all text-[11px] ${sentRequests.has(user.id)
                       ? 'bg-green-100 text-green-600 cursor-not-allowed'
@@ -181,15 +276,46 @@ export function Invite() {
           <input
             type="email"
             placeholder="Enter email address..."
+            value={inviteEmail}
+            onChange={e => setInviteEmail(e.target.value)}
             className="flex-1 px-4 py-3 rounded-xl border border-border text-[13px] text-[#1B2B4B] placeholder:text-muted-foreground focus:outline-none focus:border-[#FFD100] focus:ring-2 focus:ring-[#FFD100]/20 bg-white transition-all"
           />
           <button
+            onClick={sendEmailInvite}
             className="flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-[#1B2B4B] hover:brightness-105 transition-all whitespace-nowrap"
             style={{ background: '#FFD100', fontSize: '13px' }}
           >
             <UserPlus size={15} />
             Send Invite
           </button>
+        </div>
+      </div>
+
+      {/* My Connections section */}
+      <div className="bg-white rounded-2xl border border-border overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 style={{ fontSize: '15px', color: '#1B2B4B' }}>My Connections</h3>
+          <span className="text-muted-foreground" style={{ fontSize: '12px' }}>
+            {connections.length}
+          </span>
+        </div>
+        <div className="p-5">
+          {connectionsLoading ? (
+            <div className="text-muted-foreground" style={{ fontSize: '13px' }}>Loading connections...</div>
+          ) : connections.length === 0 ? (
+            <div className="text-muted-foreground" style={{ fontSize: '13px' }}>
+              No accepted connections yet. Send a connect invite and ask them to accept from Notifications.
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {connections.map((c) => (
+                <div key={c.id} className="rounded-xl border border-border px-3 py-2.5">
+                  <div className="font-semibold text-[#1B2B4B] truncate" style={{ fontSize: '13px' }}>{c.name}</div>
+                  <div className="text-muted-foreground truncate" style={{ fontSize: '11px' }}>{c.phone || c.iban || 'Connected user'}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

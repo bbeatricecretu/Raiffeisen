@@ -448,14 +448,26 @@ class DatabaseClient:
     # TEAMS
 
     def create_team(self, name: str, created_by: str,
-                    image_url: str = "") -> Dict[str, Any]:
+                    image_url: str = "", code: Optional[str] = None) -> Dict[str, Any]:
+        normalized_code = (code or "").strip().upper()
+
+        if normalized_code:
+            existing = self.get_team_by_code(normalized_code)
+            if existing:
+                with self._get_connection() as conn:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO team_members (user_id, team_id, role) VALUES (?, ?, 'member')",
+                        (created_by, existing["id"]),
+                    )
+                return existing
+
         team_id = _new_id()
-        code    = team_id[:8].upper()
+        invite_code = normalized_code if normalized_code else team_id[:8].upper()
         with self._get_connection() as conn:
             conn.execute(
                 "INSERT INTO teams (id, name, code, image_url, created_by) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (team_id, name, code, image_url or None, created_by),
+                (team_id, name, invite_code, image_url or None, created_by),
             )
             conn.execute(
                 "INSERT INTO team_members (user_id, team_id, role) VALUES (?, ?, 'admin')",
@@ -509,6 +521,14 @@ class DatabaseClient:
                 (team_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def is_team_member(self, user_id: str, team_id: str) -> bool:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM team_members WHERE user_id = ? AND team_id = ? LIMIT 1",
+                (user_id, team_id),
+            ).fetchone()
+        return row is not None
 
     def remove_member(self, user_id: str, team_id: str) -> None:
         with self._get_connection() as conn:
@@ -699,6 +719,129 @@ class DatabaseClient:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_suggested_connections(self, user_id: str, limit: int = 24) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            me = conn.execute(
+                "SELECT id, career, location FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            if not me:
+                return []
+
+            rows = conn.execute(
+                "SELECT u.id, u.name, u.email, u.phone, u.career, u.location "
+                "FROM users u "
+                "LEFT JOIN contacts c "
+                "ON c.user_id = ? AND LOWER(COALESCE(c.name, '')) = LOWER(COALESCE(u.name, '')) "
+                "WHERE u.id <> ? AND c.id IS NULL "
+                "ORDER BY "
+                "CASE WHEN LOWER(COALESCE(u.career, '')) = LOWER(COALESCE(?, '')) THEN 0 ELSE 1 END, "
+                "CASE WHEN LOWER(COALESCE(u.location, '')) = LOWER(COALESCE(?, '')) THEN 0 ELSE 1 END, "
+                "u.name ASC "
+                "LIMIT ?",
+                (user_id, user_id, me["career"], me["location"], limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def _resolve_user_id_from_contact(self, conn: sqlite3.Connection, name: str = "", iban: str = "", phone: str = "") -> Optional[str]:
+        if iban:
+            normalized_iban = iban.replace(" ", "").replace("-", "").upper()
+            row = conn.execute(
+                "SELECT id FROM users "
+                "WHERE REPLACE(REPLACE(UPPER(COALESCE(iban, '')), ' ', ''), '-', '') = ? "
+                "LIMIT 1",
+                (normalized_iban,),
+            ).fetchone()
+            if row:
+                return row["id"]
+
+        if phone:
+            normalized_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            row = conn.execute(
+                "SELECT id FROM users "
+                "WHERE REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '(', ''), ')', '') = ? "
+                "LIMIT 1",
+                (normalized_phone,),
+            ).fetchone()
+            if row:
+                return row["id"]
+
+        if name:
+            row = conn.execute(
+                "SELECT id FROM users WHERE LOWER(name) = LOWER(?) LIMIT 1",
+                (name,),
+            ).fetchone()
+            if row:
+                return row["id"]
+
+        return None
+
+    def get_contact_network_user_ids(self, user_id: str) -> List[str]:
+        with self._get_connection() as conn:
+            viewer = conn.execute("SELECT id, name, iban, phone FROM users WHERE id = ?", (user_id,)).fetchone()
+            if not viewer:
+                return [user_id]
+
+            connected_ids = {user_id}
+
+            # Direct contacts that current user added.
+            owned_contacts = conn.execute(
+                "SELECT name, iban, phone FROM contacts WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+            for c in owned_contacts:
+                target_id = self._resolve_user_id_from_contact(
+                    conn,
+                    name=c["name"] or "",
+                    iban=c["iban"] or "",
+                    phone=c["phone"] or "",
+                )
+                if target_id and target_id != user_id:
+                    connected_ids.add(target_id)
+
+            # Reverse contacts: people who have current user saved as a contact.
+            normalized_iban = (viewer["iban"] or "").replace(" ", "").replace("-", "").upper()
+            normalized_phone = (viewer["phone"] or "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            reverse_rows = conn.execute(
+                "SELECT DISTINCT user_id FROM contacts WHERE "
+                "(LOWER(COALESCE(name, '')) = LOWER(?)) OR "
+                "(? <> '' AND REPLACE(REPLACE(UPPER(COALESCE(iban, '')), ' ', ''), '-', '') = ?) OR "
+                "(? <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '(', ''), ')', '') = ?)",
+                (
+                    viewer["name"] or "",
+                    normalized_iban,
+                    normalized_iban,
+                    normalized_phone,
+                    normalized_phone,
+                ),
+            ).fetchall()
+            for row in reverse_rows:
+                if row["user_id"] and row["user_id"] != user_id:
+                    connected_ids.add(row["user_id"])
+
+        return list(connected_ids)
+
+    def get_contact_network_posts(self, user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        user_ids = self.get_contact_network_user_ids(user_id)
+        if not user_ids:
+            return []
+
+        placeholders = ",".join(["?"] * len(user_ids))
+        query = (
+            "SELECT p.*, u.name AS author_name, t.name AS team_name "
+            "FROM posts p "
+            "JOIN users u ON p.user_id = u.id "
+            "LEFT JOIN teams t ON p.team_id = t.id "
+            f"WHERE p.user_id IN ({placeholders}) "
+            "ORDER BY p.created_at DESC "
+            "LIMIT ?"
+        )
+
+        with self._get_connection() as conn:
+            rows = conn.execute(query, (*user_ids, limit)).fetchall()
+
+        return [dict(r) for r in rows]
+
     def update_contact(self, contact_id: str, **fields) -> Optional[Dict[str, Any]]:
         allowed = {"name", "iban", "phone"}
         updates = {k: v for k, v in fields.items() if k in allowed}
@@ -713,6 +856,221 @@ class DatabaseClient:
     def delete_contact(self, contact_id: str) -> None:
         with self._get_connection() as conn:
             conn.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+
+    # CONNECTION INVITES
+
+    def create_referral_invite(self, inviter_id: str, channel: str = "link", invitee_email: Optional[str] = None) -> Dict[str, Any]:
+        if channel not in {"link", "email"}:
+            raise ValueError("Invalid channel")
+        rid = _new_id()
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO referral_invites (id, inviter_id, invitee_email, channel, status) "
+                "VALUES (?, ?, ?, ?, 'pending')",
+                (rid, inviter_id, (invitee_email or None), channel),
+            )
+            row = conn.execute("SELECT * FROM referral_invites WHERE id = ?", (rid,)).fetchone()
+        return dict(row)
+
+    def mark_referral_joined(self, invite_id: str, joined_user_id: str, joined_email: str = "") -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            invite = conn.execute(
+                "SELECT * FROM referral_invites WHERE id = ?",
+                (invite_id,),
+            ).fetchone()
+            if not invite:
+                return None
+            if invite["status"] == "joined":
+                return dict(invite)
+
+            # If email was specified on invite, only accept matching signup email.
+            invited_email = (invite["invitee_email"] or "").strip().lower()
+            signup_email = (joined_email or "").strip().lower()
+            if invited_email and signup_email and invited_email != signup_email:
+                raise ValueError("Referral invite email mismatch")
+
+            conn.execute(
+                "UPDATE referral_invites SET status = 'joined', joined_user_id = ?, joined_at = datetime('now') WHERE id = ?",
+                (joined_user_id, invite_id),
+            )
+            row = conn.execute("SELECT * FROM referral_invites WHERE id = ?", (invite_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_referral_stats(self, inviter_id: str) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            total_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM referral_invites WHERE inviter_id = ?",
+                (inviter_id,),
+            ).fetchone()
+            joined_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM referral_invites WHERE inviter_id = ? AND status = 'joined'",
+                (inviter_id,),
+            ).fetchone()
+
+        invites_sent = int(total_row["c"] if total_row else 0)
+        joined = int(joined_row["c"] if joined_row else 0)
+        pending = max(0, invites_sent - joined)
+        return {
+            "invites_sent": invites_sent,
+            "joined": joined,
+            "pending": pending,
+        }
+
+    def create_connection_invite(self, sender_id: str, recipient_id: str) -> Dict[str, Any]:
+        if sender_id == recipient_id:
+            raise ValueError("Cannot send invite to yourself")
+
+        iid = _new_id()
+        with self._get_connection() as conn:
+            already_connected = conn.execute(
+                "SELECT 1 FROM connection_invites "
+                "WHERE status = 'accepted' AND ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) "
+                "LIMIT 1",
+                (sender_id, recipient_id, recipient_id, sender_id),
+            ).fetchone()
+            if already_connected:
+                raise ValueError("Users are already connected")
+
+            existing = conn.execute(
+                "SELECT id FROM connection_invites "
+                "WHERE sender_id = ? AND recipient_id = ? AND status = 'pending'",
+                (sender_id, recipient_id),
+            ).fetchone()
+            if existing:
+                row = conn.execute(
+                    "SELECT * FROM connection_invites WHERE id = ?",
+                    (existing["id"],),
+                ).fetchone()
+                return dict(row)
+
+            conn.execute(
+                "INSERT INTO connection_invites (id, sender_id, recipient_id, status) "
+                "VALUES (?, ?, ?, 'pending')",
+                (iid, sender_id, recipient_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM connection_invites WHERE id = ?",
+                (iid,),
+            ).fetchone()
+        return dict(row)
+
+    def get_user_connection_invites(self, user_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = (
+            "SELECT ci.*, su.name AS sender_name, su.email AS sender_email, su.career AS sender_career "
+            "FROM connection_invites ci "
+            "JOIN users su ON ci.sender_id = su.id "
+            "WHERE ci.recipient_id = ?"
+        )
+        params: List[Any] = [user_id]
+        if status:
+            query += " AND ci.status = ?"
+            params.append(status)
+        query += " ORDER BY ci.created_at DESC"
+
+        with self._get_connection() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_connection_invite(self, invite_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM connection_invites WHERE id = ?",
+                (invite_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_user_mutual_connections(self, user_id: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT "
+                "CASE WHEN ci.sender_id = ? THEN u_rec.id ELSE u_send.id END AS id, "
+                "CASE WHEN ci.sender_id = ? THEN u_rec.name ELSE u_send.name END AS name, "
+                "CASE WHEN ci.sender_id = ? THEN u_rec.email ELSE u_send.email END AS email, "
+                "CASE WHEN ci.sender_id = ? THEN u_rec.phone ELSE u_send.phone END AS phone, "
+                "CASE WHEN ci.sender_id = ? THEN u_rec.career ELSE u_send.career END AS career, "
+                "CASE WHEN ci.sender_id = ? THEN u_rec.location ELSE u_send.location END AS location, "
+                "ci.responded_at AS connected_at "
+                "FROM connection_invites ci "
+                "JOIN users u_send ON u_send.id = ci.sender_id "
+                "JOIN users u_rec ON u_rec.id = ci.recipient_id "
+                "WHERE ci.status = 'accepted' AND (ci.sender_id = ? OR ci.recipient_id = ?) "
+                "ORDER BY ci.responded_at DESC, ci.created_at DESC",
+                (user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def _contact_exists(self, conn: sqlite3.Connection, user_id: str, target_name: str, target_iban: str = "", target_phone: str = "") -> bool:
+        row = conn.execute(
+            "SELECT 1 FROM contacts WHERE user_id = ? AND LOWER(name) = LOWER(?) LIMIT 1",
+            (user_id, target_name),
+        ).fetchone()
+        if row:
+            return True
+
+        if target_iban:
+            normalized_iban = target_iban.replace(" ", "").replace("-", "").upper()
+            row = conn.execute(
+                "SELECT 1 FROM contacts WHERE user_id = ? AND REPLACE(REPLACE(UPPER(COALESCE(iban, '')), ' ', ''), '-', '') = ? LIMIT 1",
+                (user_id, normalized_iban),
+            ).fetchone()
+            if row:
+                return True
+
+        if target_phone:
+            normalized_phone = target_phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            row = conn.execute(
+                "SELECT 1 FROM contacts WHERE user_id = ? AND REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '(', ''), ')', '') = ? LIMIT 1",
+                (user_id, normalized_phone),
+            ).fetchone()
+            if row:
+                return True
+
+        return False
+
+    def respond_connection_invite(self, invite_id: str, recipient_id: str, status: str) -> Optional[Dict[str, Any]]:
+        if status not in {"accepted", "rejected"}:
+            raise ValueError("Invalid invite status")
+
+        with self._get_connection() as conn:
+            invite = conn.execute(
+                "SELECT * FROM connection_invites WHERE id = ?",
+                (invite_id,),
+            ).fetchone()
+            if not invite:
+                return None
+            if invite["recipient_id"] != recipient_id:
+                raise PermissionError("Not allowed to respond to this invite")
+            if invite["status"] != "pending":
+                return dict(invite)
+
+            conn.execute(
+                "UPDATE connection_invites SET status = ?, responded_at = datetime('now') WHERE id = ?",
+                (status, invite_id),
+            )
+
+            if status == "accepted":
+                sender = conn.execute("SELECT id, name, iban, phone FROM users WHERE id = ?", (invite["sender_id"],)).fetchone()
+                recipient = conn.execute("SELECT id, name, iban, phone FROM users WHERE id = ?", (invite["recipient_id"],)).fetchone()
+
+                if sender and recipient:
+                    if not self._contact_exists(conn, recipient["id"], sender["name"], sender["iban"] or "", sender["phone"] or ""):
+                        conn.execute(
+                            "INSERT INTO contacts (id, user_id, name, iban, phone) VALUES (?, ?, ?, ?, ?)",
+                            (_new_id(), recipient["id"], sender["name"], sender["iban"] or None, sender["phone"] or None),
+                        )
+
+                    if not self._contact_exists(conn, sender["id"], recipient["name"], recipient["iban"] or "", recipient["phone"] or ""):
+                        conn.execute(
+                            "INSERT INTO contacts (id, user_id, name, iban, phone) VALUES (?, ?, ?, ?, ?)",
+                            (_new_id(), sender["id"], recipient["name"], recipient["iban"] or None, recipient["phone"] or None),
+                        )
+
+            row = conn.execute(
+                "SELECT * FROM connection_invites WHERE id = ?",
+                (invite_id,),
+            ).fetchone()
+
+        return dict(row) if row else None
 
     # TRANSACTION DELETE
 
@@ -781,7 +1139,7 @@ class DatabaseClient:
 
     def health_check(self) -> Dict[str, Any]:
         tables = ["users", "merchants", "transactions", "teams", "team_members",
-                  "posts", "comments", "conversations", "messages", "user_preferences"]
+                  "posts", "comments", "conversations", "messages", "user_preferences", "connection_invites", "referral_invites"]
         with self._get_connection() as conn:
             counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
                       for t in tables}

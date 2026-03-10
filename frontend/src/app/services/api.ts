@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000/api';
 
 export interface SearchResponse {
   status: 'success' | 'refused' | 'error';
@@ -81,7 +81,7 @@ export const api = {
 
   // --- Auth & Users ---
 
-  register: async (data: { name: string, password: string, email?: string, phone?: string }) => {
+  register: async (data: { name: string, password: string, email?: string, phone?: string, referral_invite_id?: string }) => {
     const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -183,11 +183,11 @@ export const api = {
     return res.json();
   },
 
-  createTeam: async (name: string, userId: string, imageUrl?: string) => {
+  createTeam: async (name: string, userId: string, imageUrl?: string, code?: string) => {
     const res = await fetch(`${API_BASE_URL}/teams`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, created_by: userId, image_url: imageUrl }),
+      body: JSON.stringify({ name, created_by: userId, image_url: imageUrl, code }),
     });
     return res.json();
   },
@@ -202,8 +202,21 @@ export const api = {
     return res.json();
   },
 
-  getTeamPosts: async (teamId: string) => {
-    const res = await fetch(`${API_BASE_URL}/teams/${teamId}/posts`);
+  getTeamPosts: async (teamId: string, userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/teams/${teamId}/posts?user_id=${userId}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getCommunityFeed: async (userId: string, limit: number = 100) => {
+    const res = await fetch(`${API_BASE_URL}/community/feed?user_id=${userId}&limit=${limit}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getSuggestedConnections: async (userId: string, limit: number = 24) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/suggested-connections?limit=${limit}`);
+    if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
 
@@ -234,6 +247,53 @@ export const api = {
     return res.json();
   },
 
+  sendConnectionInvite: async (senderId: string, recipientId: string) => {
+    const res = await fetch(`${API_BASE_URL}/connections/invites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender_id: senderId, recipient_id: recipientId }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getConnectionInvites: async (userId: string, status: 'pending' | 'accepted' | 'rejected' | '' = 'pending') => {
+    const query = status ? `?status=${status}` : '';
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/connection-invites${query}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  respondConnectionInvite: async (inviteId: string, recipientId: string, status: 'accepted' | 'rejected') => {
+    const res = await fetch(`${API_BASE_URL}/connections/invites/${inviteId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient_id: recipientId, status }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  createReferralInvite: async (
+    inviterId: string,
+    channel: 'link' | 'email',
+    inviteeEmail?: string
+  ) => {
+    const res = await fetch(`${API_BASE_URL}/referrals/invites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviter_id: inviterId, channel, invitee_email: inviteeEmail || null }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getReferralStats: async (userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/referral-stats`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
   confirmTransaction: async (data: { user_id: string, merchant: string, amount: number, category: string, county?: string, city?: string, source_account?: 'current' | 'savings' }) => {
     const res = await fetch(`${API_BASE_URL}/transactions`, {
       method: 'POST',
@@ -254,6 +314,12 @@ export const api = {
 
   getUserContacts: async (userId: string) => {
     const res = await fetch(`${API_BASE_URL}/users/${userId}/contacts`);
+    return res.json();
+  },
+
+  getUserConnections: async (userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/connections`);
+    if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
 

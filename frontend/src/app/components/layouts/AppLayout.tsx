@@ -77,7 +77,7 @@ export function AppLayout() {
       { to: '/app/confirm', icon: CheckCircle2, label: 'Confirmations', badge: pendingCount > 0 ? pendingCount.toString() : undefined },
     ],
     community: [
-      { to: '/app/community/c1', icon: Users, label: 'Community Feed' },
+      { to: '/app/community', icon: Users, label: 'Community Feed' },
       { to: '/app/invite', icon: UserPlus, label: 'Invite Friends' },
       { to: '/app/join', icon: Search, label: 'Join Community' },
     ],
@@ -249,7 +249,7 @@ export function AppLayout() {
                 {t('layout.quick.bank')}
               </button>
               <button
-                onClick={() => navigate('/app/community/c1')}
+                onClick={() => navigate('/app/community')}
                 className="px-3 py-1.5 rounded-md text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-white transition-all"
               >
                 {t('layout.quick.community')}

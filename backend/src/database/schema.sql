@@ -148,7 +148,32 @@ CREATE TABLE IF NOT EXISTS pending_confirmations (
     created_at      TEXT DEFAULT (datetime('now'))
 );
 
+-- CONNECTION INVITES (user-to-user connect requests)
+CREATE TABLE IF NOT EXISTS connection_invites (
+    id              TEXT PRIMARY KEY,
+    sender_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recipient_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+    created_at      TEXT DEFAULT (datetime('now')),
+    responded_at    TEXT,
+    UNIQUE(sender_id, recipient_id, status)
+);
+
+-- REFERRAL INVITES (invite non-users via link/email, convert on signup)
+CREATE TABLE IF NOT EXISTS referral_invites (
+    id              TEXT PRIMARY KEY,
+    inviter_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    invitee_email   TEXT,
+    channel         TEXT NOT NULL DEFAULT 'link' CHECK(channel IN ('link', 'email')),
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'joined')),
+    joined_user_id  TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TEXT DEFAULT (datetime('now')),
+    joined_at       TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_pending_confirmations_user ON pending_confirmations(user_id);
+CREATE INDEX IF NOT EXISTS idx_connection_invites_recipient ON connection_invites(recipient_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_referral_invites_inviter ON referral_invites(inviter_id, status, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_transactions_user        ON transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_merchant    ON transactions(merchant_id);

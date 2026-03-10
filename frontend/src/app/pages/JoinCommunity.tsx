@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Search, Users, CheckCircle2, Hash, ChevronRight, Briefcase, Building2, AlertCircle } from 'lucide-react';
+import { useEffect } from 'react';
+import { Search, Users, CheckCircle2, Hash, ChevronRight, Briefcase, Building2, AlertCircle, Copy, Check } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { communities, currentUser } from '../services/mockData';
 import { api } from '../services/api';
@@ -8,13 +9,42 @@ const categories = ['All', 'Technology', 'Finance', 'Startup', 'Banking', 'Finte
 
 export function JoinCommunity() {
   const navigate = useNavigate();
+  const [teamMap, setTeamMap] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCareer, setSearchCareer] = useState('');
   const [teamCode, setTeamCode] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
-  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set(['c1']));
+  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
   const [codeStatus, setCodeStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isLoading, setIsLoading] = useState(false);
+  const [copiedCommunityId, setCopiedCommunityId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const realUserId = localStorage.getItem('userId') || currentUser.id;
+    const localMapRaw = localStorage.getItem(`community-team-map:${realUserId}`);
+    const localMap = localMapRaw ? (JSON.parse(localMapRaw) as Record<string, string>) : {};
+    setTeamMap(localMap);
+
+    const knownJoined = new Set<string>(Object.keys(localMap));
+    setJoinedIds(knownJoined);
+
+    api.getUserTeams(realUserId)
+      .then((teams) => {
+        if (!Array.isArray(teams)) return;
+        const mergedMap = { ...localMap };
+        communities.forEach((c) => {
+          const found = teams.find((t: any) => t.name === c.name);
+          if (found) {
+            mergedMap[c.id] = found.id;
+            knownJoined.add(c.id);
+          }
+        });
+        setTeamMap(mergedMap);
+        setJoinedIds(new Set(knownJoined));
+        localStorage.setItem(`community-team-map:${realUserId}`, JSON.stringify(mergedMap));
+      })
+      .catch(() => {});
+  }, []);
 
   const filtered = communities.filter(c => {
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -23,15 +53,44 @@ export function JoinCommunity() {
   });
 
   const handleJoin = async (id: string, code?: string) => {
-    // If we have a code (from prompt or backend), use it. Most communities in mock don't have public codes shown here.
-    // For this demo, let's assume we can join by ID if we implement that, or just track UI state.
-    // But the requirement says "functional buttons".
-    // Let's try to join via backend if we find the code, or just simulate for open communities.
-    
-    // Actually, api.joinTeam requires a code. 
-    // If it's an "Open" community, maybe no code needed? API says "join_team(user_id, code)".
-    // Let's assume joining by button here is 'Request to join' or strictly simpler in UI.
-    setJoinedIds(prev => new Set([...prev, id]));
+    const realUserId = localStorage.getItem('userId') || currentUser.id;
+    const existingTeamId = teamMap[id];
+    if (existingTeamId) {
+      setJoinedIds(prev => new Set([...prev, id]));
+      navigate(`/app/community/${existingTeamId}`);
+      return;
+    }
+
+    const community = communities.find((c) => c.id === id);
+    if (!community) return;
+
+    try {
+      let joinedTeamId = '';
+      const sharedCode = (code || community.teamCode || '').toUpperCase();
+
+      if (sharedCode) {
+        let joined;
+        try {
+          joined = await api.joinTeam(realUserId, sharedCode);
+        } catch {
+          // First user in this community creates it with the canonical code.
+          joined = await api.createTeam(community.name, realUserId, community.cover, sharedCode);
+        }
+        joinedTeamId = joined.id;
+      } else {
+        const created = await api.createTeam(community.name, realUserId, community.cover);
+        joinedTeamId = created.id;
+      }
+
+      const nextMap = { ...teamMap, [id]: joinedTeamId };
+      setTeamMap(nextMap);
+      setJoinedIds(prev => new Set([...prev, id]));
+      localStorage.setItem(`community-team-map:${realUserId}`, JSON.stringify(nextMap));
+      navigate(`/app/community/${joinedTeamId}`);
+    } catch (e) {
+      console.error(e);
+      setCodeStatus('error');
+    }
   };
 
   const handleCodeJoin = async () => {
@@ -40,19 +99,35 @@ export function JoinCommunity() {
     setCodeStatus('idle');
 
     try {
-      await api.joinTeam(currentUser.id, teamCode.toUpperCase());
+      const realUserId = localStorage.getItem('userId') || currentUser.id;
+      const joined = await api.joinTeam(realUserId, teamCode.toUpperCase());
       setCodeStatus('success');
       // If successful, maybe find the community by code in our mock list to update UI
       const found = communities.find(c => c.teamCode === teamCode.toUpperCase());
       if (found) {
+         const nextMap = { ...teamMap, [found.id]: joined.id };
+         setTeamMap(nextMap);
          setJoinedIds(prev => new Set([...prev, found.id]));
+         localStorage.setItem(`community-team-map:${realUserId}`, JSON.stringify(nextMap));
       }
+      navigate(`/app/community/${joined.id}`);
     } catch (e) {
       console.error(e);
       setCodeStatus('error');
     } finally {
       setIsLoading(false);
       setTimeout(() => setCodeStatus('idle'), 3000);
+    }
+  };
+
+  const copyCommunityCode = async (communityId: string, code?: string) => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCommunityId(communityId);
+      window.setTimeout(() => setCopiedCommunityId(null), 1500);
+    } catch {
+      // no-op
     }
   };
 
@@ -202,7 +277,7 @@ export function JoinCommunity() {
                     <div className="flex items-center gap-2">
                       {isJoined ? (
                         <button
-                          onClick={() => navigate(`/app/community/${community.id}`)}
+                          onClick={() => navigate(`/app/community/${teamMap[community.id]}`)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white transition-all hover:brightness-95"
                           style={{ background: '#1B2B4B' }}
                         >
@@ -212,7 +287,7 @@ export function JoinCommunity() {
                         </button>
                       ) : (
                         <button
-                          onClick={() => handleJoin(community.id)}
+                          onClick={() => handleJoin(community.id, community.teamCode)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-[#1B2B4B] hover:brightness-105 transition-all"
                           style={{ background: '#FFD100' }}
                         >
@@ -222,6 +297,21 @@ export function JoinCommunity() {
                       )}
                     </div>
                   </div>
+
+                  {community.teamCode && (
+                    <div className="mt-3 pt-2 border-t border-border/60 flex items-center justify-between gap-2">
+                      <div className="text-muted-foreground" style={{ fontSize: '11px' }}>
+                        Code: <span className="font-mono text-[#1B2B4B] font-semibold">{community.teamCode}</span>
+                      </div>
+                      <button
+                        onClick={() => copyCommunityCode(community.id, community.teamCode)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-[10px] font-semibold text-[#1B2B4B] hover:bg-muted"
+                      >
+                        {copiedCommunityId === community.id ? <Check size={11} /> : <Copy size={11} />}
+                        {copiedCommunityId === community.id ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
