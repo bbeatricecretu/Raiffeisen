@@ -83,6 +83,7 @@ class TransactionRequest(BaseModel):
     county: Optional[str] = None
     city: Optional[str] = None
     currency: str = "RON"
+    source_account: Optional[str] = "current"  # current | savings
 
 class ExchangeRequest(BaseModel):
     user_id: str
@@ -97,6 +98,7 @@ class AdminUserCreateRequest(BaseModel):
     email: Optional[str] = None
     iban: Optional[str] = None
     balance: Optional[float] = 0.0
+    balance_savings: Optional[float] = 15420.50
     career: Optional[str] = None
 
 class ContactCreateRequest(BaseModel):
@@ -123,12 +125,18 @@ class PendingConfirmationRequest(BaseModel):
 class PendingConfirmationStatusRequest(BaseModel):
     status: str  # "confirmed" or "rejected"
 
+class UserPreferencesRequest(BaseModel):
+    email_alerts: bool
+    push_alerts: bool
+    hide_small_amounts: bool
+
 class AdminUserUpdateRequest(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     iban: Optional[str] = None
     balance: Optional[float] = None
+    balance_savings: Optional[float] = None
     career: Optional[str] = None
     location: Optional[str] = None
     password: Optional[str] = None
@@ -235,6 +243,27 @@ async def get_user(user_id: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+@app.get("/api/users/{user_id}/preferences")
+async def get_user_preferences(user_id: str):
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.get_user_preferences(user_id)
+
+@app.put("/api/users/{user_id}/preferences")
+async def update_user_preferences(user_id: str, req: UserPreferencesRequest):
+    db = get_db()
+    user = db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.upsert_user_preferences(
+        user_id=user_id,
+        email_alerts=req.email_alerts,
+        push_alerts=req.push_alerts,
+        hide_small_amounts=req.hide_small_amounts,
+    )
 
 @app.post("/api/users/check-contacts")
 async def check_contacts(req: ContactCheckRequest):
@@ -426,6 +455,19 @@ async def create_transaction(req: TransactionRequest):
     # Use current time
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
+        sender = db.get_user(req.user_id)
+        if not sender:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        source_account = (req.source_account or "current").lower()
+        if source_account not in {"current", "savings"}:
+            raise HTTPException(status_code=400, detail="Invalid source account")
+
+        source_balance_key = "balance" if source_account == "current" else "balance_savings"
+        available_balance = float(sender.get(source_balance_key) or 0.0)
+        if req.amount > available_balance:
+            raise HTTPException(status_code=400, detail="Insufficient funds")
+
         # Check if Transfer and Recipient exists BEFORE inserting first transaction
         if req.category == "Transfer":
             # Try to find recipient by multiple fields
@@ -438,7 +480,6 @@ async def create_transaction(req: TransactionRequest):
                 recipient = db.get_user_by_email(req.merchant)
 
             if recipient:
-                sender = db.get_user(req.user_id)
                 sender_name = sender['name'] if sender else "Unknown Sender"
                 recipient_name = recipient['name']
                 
@@ -451,7 +492,8 @@ async def create_transaction(req: TransactionRequest):
                     city=req.city,
                     county=req.county,
                     category=req.category,
-                    currency=req.currency
+                    currency=req.currency,
+                    source_balance_key=source_balance_key,
                 )
 
                 # 2. Recipient transaction (Received from Sender Name)
@@ -477,7 +519,8 @@ async def create_transaction(req: TransactionRequest):
             city=req.city,
             county=req.county,
             category=req.category,
-            currency=req.currency
+            currency=req.currency,
+            source_balance_key=source_balance_key,
         )
         return {"status": "success", "transaction": tx}
     except Exception as e:
@@ -577,6 +620,7 @@ async def admin_create_user(req: AdminUserCreateRequest):
     updates = {}
     if req.career: updates['career'] = req.career
     if req.location: updates['location'] = req.location
+    if req.balance_savings is not None: updates['balance_savings'] = req.balance_savings
     
     if updates:
         db.update_user(user['id'], **updates)

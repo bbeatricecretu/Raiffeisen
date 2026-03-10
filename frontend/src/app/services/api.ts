@@ -234,12 +234,13 @@ export const api = {
     return res.json();
   },
 
-  confirmTransaction: async (data: { user_id: string, merchant: string, amount: number, category: string, county?: string, city?: string }) => {
+  confirmTransaction: async (data: { user_id: string, merchant: string, amount: number, category: string, county?: string, city?: string, source_account?: 'current' | 'savings' }) => {
     const res = await fetch(`${API_BASE_URL}/transactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
 
@@ -338,6 +339,27 @@ export const api = {
 
   getUserMerchants: async (userId: string) => {
     const res = await fetch(`${API_BASE_URL}/users/${userId}/merchants`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  // --- User Preferences ---
+
+  getUserPreferences: async (userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/preferences`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  updateUserPreferences: async (
+    userId: string,
+    data: { email_alerts: boolean; push_alerts: boolean; hide_small_amounts: boolean }
+  ) => {
+    const res = await fetch(`${API_BASE_URL}/users/${userId}/preferences`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },

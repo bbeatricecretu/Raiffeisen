@@ -18,6 +18,9 @@ import { MerchantDetails } from './pages/MerchantDetails';
 import { Merchants } from './pages/Merchants';
 import { TransactionDetails } from './pages/TransactionDetails';
 import { Admin } from './pages/Admin';
+import { Notifications } from './pages/Notifications';
+import { SettingsPage } from './pages/SettingsPage';
+import { Analytics } from './pages/Analytics';
 
 export const router = createBrowserRouter([
   {
@@ -55,6 +58,9 @@ export const router = createBrowserRouter([
       { path: 'transaction/:id', element: <TransactionDetails /> },
       { path: 'merchants', element: <Merchants /> },
       { path: 'merchant/:id', element: <MerchantDetails /> },
+      { path: 'notifications', element: <Notifications /> },
+      { path: 'settings', element: <SettingsPage /> },
+      { path: 'analytics', element: <Analytics /> },
     ],
   },
 ]);

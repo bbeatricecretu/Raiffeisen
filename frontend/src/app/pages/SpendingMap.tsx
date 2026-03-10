@@ -3,6 +3,7 @@ import { X, Filter, TrendingUp, ChevronDown, MapPin } from 'lucide-react';
 import { MapContainer, TileLayer, Circle, CircleMarker, Tooltip, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../services/api';
+import { getHideSmallAmountsPreference, shouldHideAmount } from '../services/userPreferences';
 
 
 // County Coordinates (approximate centroids)
@@ -100,6 +101,7 @@ export function SpendingMap() {
   const [selectedPin, setSelectedPin] = useState<any | null>(null);
   const [filters, setFilters] = useState<FilterState>({ category: 'All', dateRange: 'All time', minAmount: 0, maxAmount: 10000 });
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [hideSmallAmounts, setHideSmallAmounts] = useState<boolean>(() => getHideSmallAmountsPreference());
 
   useEffect(() => {
     const uid = localStorage.getItem('userId') || 'me';
@@ -123,7 +125,19 @@ export function SpendingMap() {
     }).catch(() => setTransactions([]));
   }, []);
 
+  useEffect(() => {
+    const syncPreference = () => setHideSmallAmounts(getHideSmallAmountsPreference());
+    window.addEventListener('settings-changed', syncPreference);
+    window.addEventListener('storage', syncPreference);
+    return () => {
+      window.removeEventListener('settings-changed', syncPreference);
+      window.removeEventListener('storage', syncPreference);
+    };
+  }, []);
+
   const filteredTx = useMemo(() => transactions.filter(tx => {
+    if (shouldHideAmount(Number(tx.amount) || 0, hideSmallAmounts)) return false;
+
     // 1. Amount
     if (tx.amount < filters.minAmount || tx.amount > filters.maxAmount) return false;
     
@@ -145,7 +159,7 @@ export function SpendingMap() {
       }
     }
     return true;
-  }), [filters, transactions]);
+  }), [filters, transactions, hideSmallAmounts]);
 
     // Aggregate by county
     const countyData = useMemo(() => {

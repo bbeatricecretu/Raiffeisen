@@ -10,6 +10,7 @@ interface User {
   phone: string;
   iban: string;
   balance: number;
+  balance_savings?: number;
   career?: string;
   location?: string;
 }
@@ -138,7 +139,7 @@ export function Admin() {
     setUserForm({
       name: '', email: '', phone: '',
       iban: `RO${Math.floor(Math.random() * 100)}RAIF${Date.now().toString().slice(-14)}`,
-      balance: 2500.00, password: 'Password123!', career: '', location: ''
+      balance: 2500.00, balance_savings: 15420.50, password: 'Password123!', career: '', location: ''
     });
     setIsCreatingUser(true);
   };
@@ -261,10 +262,14 @@ export function Admin() {
               <input className="w-full border p-2 rounded" value={userForm.phone || ''} onChange={e => setUserForm({ ...userForm, phone: e.target.value })} />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Balance (RON)</label>
-              <input type="number" className="w-full border p-2 rounded" value={userForm.balance} onChange={e => setUserForm({ ...userForm, balance: parseFloat(e.target.value) })} />
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Cont Curent (RON)</label>
+              <input type="number" className="w-full border p-2 rounded" value={userForm.balance ?? 0} onChange={e => setUserForm({ ...userForm, balance: parseFloat(e.target.value) || 0 })} />
             </div>
           </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Cont Economii (RON)</label>
+            <input type="number" className="w-full border p-2 rounded" value={userForm.balance_savings ?? 0} onChange={e => setUserForm({ ...userForm, balance_savings: parseFloat(e.target.value) || 0 })} />
+            </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-1">IBAN</label>
             <input className="w-full border p-2 rounded font-mono text-sm" value={userForm.iban || ''} onChange={e => setUserForm({ ...userForm, iban: e.target.value })} />
@@ -344,22 +349,26 @@ export function Admin() {
               <tr>
                 <th className="px-6 py-3">Name</th>
                 <th className="px-6 py-3">Email</th>
-                <th className="px-6 py-3">Balance</th>
+                <th className="px-6 py-3">Cont Curent (RON)</th>
+                <th className="px-6 py-3">Cont Economii (RON)</th>
                 <th className="px-6 py-3">IBAN</th>
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
+                <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">Loading...</td></tr>
               ) : filteredUsers.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">No users found</td></tr>
+                <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">No users found</td></tr>
               ) : filteredUsers.map(user => (
                 <tr key={user.id} className="hover:bg-gray-50/50 cursor-pointer" onClick={() => selectUser(user)}>
                   <td className="px-6 py-3 font-medium text-[#1B2B4B]">{user.name}</td>
                   <td className="px-6 py-3 text-gray-500">{user.email}</td>
                   <td className="px-6 py-3 font-mono font-medium text-[#1B2B4B]">
                     {user.balance?.toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON
+                  </td>
+                  <td className="px-6 py-3 font-mono font-medium text-[#1B2B4B]">
+                    {(user.balance_savings ?? 0).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON
                   </td>
                   <td className="px-6 py-3 font-mono text-xs text-gray-500">{user.iban || '-'}</td>
                   <td className="px-6 py-3 text-right">
@@ -386,7 +395,9 @@ export function Admin() {
         </button>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-[#1B2B4B]">{selectedUser!.name}</h1>
-          <p className="text-gray-500 text-sm">{selectedUser!.email} &middot; {selectedUser!.balance?.toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON</p>
+          <p className="text-gray-500 text-sm">
+            {selectedUser!.email} &middot; Cont Curent: {selectedUser!.balance?.toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON &middot; Cont Economii: {(selectedUser!.balance_savings ?? 0).toLocaleString('ro-RO', { minimumFractionDigits: 2 })} RON
+          </p>
         </div>
         <button onClick={() => handleEditUser(selectedUser!)} className="flex items-center gap-2 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50">
           <Edit size={14} /> Edit Profile

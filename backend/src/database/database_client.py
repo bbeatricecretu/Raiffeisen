@@ -49,6 +49,10 @@ class DatabaseClient:
             try:
                 self._memory_conn.execute("ALTER TABLE users ADD COLUMN location TEXT")
             except Exception: pass
+            try:
+                self._memory_conn.execute("ALTER TABLE users ADD COLUMN balance_savings REAL DEFAULT 15420.50")
+            except Exception:
+                pass
             self._memory_conn.commit()
         else:
             conn = sqlite3.connect(self.db_path)
@@ -60,6 +64,10 @@ class DatabaseClient:
             try:
                 conn.execute("ALTER TABLE users ADD COLUMN location TEXT")
             except Exception: pass
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN balance_savings REAL DEFAULT 15420.50")
+            except Exception:
+                pass
             conn.commit()
             conn.close()
 
@@ -171,7 +179,7 @@ class DatabaseClient:
 
     def update_user(self, user_id: str, **fields) -> Optional[Dict[str, Any]]:
         allowed = {"name", "email", "phone", "iban", "agreed", "balance", "career", "location", "password",
-                   "balance_eur", "balance_usd", "balance_gbp", "balance_chf", "balance_huf"}
+                   "balance_savings", "balance_eur", "balance_usd", "balance_gbp", "balance_chf", "balance_huf"}
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return self.get_user(user_id)
@@ -185,6 +193,52 @@ class DatabaseClient:
         with self._get_connection() as conn:
             rows = conn.execute("SELECT * FROM users").fetchall()
         return [dict(r) for r in rows]
+
+    def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT user_id, email_alerts, push_alerts, hide_small_amounts "
+                "FROM user_preferences WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+
+            if not row:
+                conn.execute(
+                    "INSERT INTO user_preferences (user_id, email_alerts, push_alerts, hide_small_amounts) "
+                    "VALUES (?, 1, 1, 0)",
+                    (user_id,),
+                )
+                row = conn.execute(
+                    "SELECT user_id, email_alerts, push_alerts, hide_small_amounts "
+                    "FROM user_preferences WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+
+        assert row is not None
+        return {
+            "user_id": row["user_id"],
+            "email_alerts": bool(row["email_alerts"]),
+            "push_alerts": bool(row["push_alerts"]),
+            "hide_small_amounts": bool(row["hide_small_amounts"]),
+        }
+
+    def upsert_user_preferences(self, user_id: str,
+                                email_alerts: bool,
+                                push_alerts: bool,
+                                hide_small_amounts: bool) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO user_preferences (user_id, email_alerts, push_alerts, hide_small_amounts, updated_at) "
+                "VALUES (?, ?, ?, ?, datetime('now')) "
+                "ON CONFLICT(user_id) DO UPDATE SET "
+                "email_alerts = excluded.email_alerts, "
+                "push_alerts = excluded.push_alerts, "
+                "hide_small_amounts = excluded.hide_small_amounts, "
+                "updated_at = datetime('now')",
+                (user_id, int(email_alerts), int(push_alerts), int(hide_small_amounts)),
+            )
+
+        return self.get_user_preferences(user_id)
 
     # MERCHANTS
 
@@ -234,8 +288,11 @@ class DatabaseClient:
                            raw_pos_string: str = "", currency: str = "RON",
                            city: str = "", county: str = "",
                            category: str = "",
-                           merchant_id: Optional[str] = None) -> Dict[str, Any]:
+                           merchant_id: Optional[str] = None,
+                           source_balance_key: str = "balance") -> Dict[str, Any]:
         tx_id = _new_id()
+        allowed_balance_keys = {"balance", "balance_savings", "balance_eur", "balance_usd", "balance_gbp", "balance_chf", "balance_huf"}
+        balance_key = source_balance_key if source_balance_key in allowed_balance_keys else "balance"
         with self._get_connection() as conn:
             conn.execute(
                 "INSERT INTO transactions "
@@ -247,7 +304,7 @@ class DatabaseClient:
             )
             # Update user balance
             conn.execute(
-                "UPDATE users SET balance = balance - ? WHERE id = ?",
+                f"UPDATE users SET {balance_key} = {balance_key} - ? WHERE id = ?",
                 (amount, user_id)
             )
         return self.get_transaction(tx_id)
@@ -724,7 +781,7 @@ class DatabaseClient:
 
     def health_check(self) -> Dict[str, Any]:
         tables = ["users", "merchants", "transactions", "teams", "team_members",
-                  "posts", "comments", "conversations", "messages"]
+                  "posts", "comments", "conversations", "messages", "user_preferences"]
         with self._get_connection() as conn:
             counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
                       for t in tables}

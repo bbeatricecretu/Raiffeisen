@@ -37,7 +37,7 @@ export function AccountDetails() {
     const CORRECT_CODE = '1234';
 
     const [accountData, setAccountData] = useState({
-        type: 'Cont Curent (RON)',
+        type: 'Current Account (RON)',
         owner: '',
         iban: '',
         balance: '0,00 RON',

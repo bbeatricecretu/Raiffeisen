@@ -17,11 +17,25 @@ const categoryColors: Record<string, string> = {
 
 type Tab = 'cards' | 'economy';
 
+function readCachedBalance(): number | null {
+  // Use only current-session user snapshot to avoid stale values across users/sessions.
+  try {
+    const rawUser = localStorage.getItem('user');
+    if (!rawUser) return null;
+    const parsedUser = JSON.parse(rawUser) as { balance?: number };
+    if (typeof parsedUser.balance === 'number') return parsedUser.balance;
+  } catch {
+    // Ignore malformed local storage values.
+  }
+
+  return null;
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('cards');
   const [chatInput, setChatInput] = useState('');
-  const [balance, setBalance] = useState<number>(0);
+  const [balance, setBalance] = useState<number | null>(() => readCachedBalance());
   const [otherBalances, setOtherBalances] = useState<Record<string, number>>({});
   const [topMerchant, setTopMerchant] = useState<{ name: string; total: number; count: number } | null>(null);
   const recent = transactions.slice(0, 6);
@@ -32,7 +46,20 @@ export function Dashboard() {
       try {
         const user = await api.getUser(uid);
         if (user) {
-          setBalance(user.balance || 0);
+          const nextBalance = user.balance || 0;
+          setBalance(nextBalance);
+
+          // Keep the authenticated user snapshot in sync with backend.
+          try {
+            const rawUser = localStorage.getItem('user');
+            if (rawUser) {
+              const parsedUser = JSON.parse(rawUser);
+              localStorage.setItem('user', JSON.stringify({ ...parsedUser, balance: nextBalance }));
+            }
+          } catch {
+            // Ignore malformed local storage payloads.
+          }
+
           const others: Record<string, number> = {};
           if (user.balance_eur) others['EUR'] = user.balance_eur;
           if (user.balance_usd) others['USD'] = user.balance_usd;
@@ -43,6 +70,7 @@ export function Dashboard() {
         }
       } catch (e) {
         console.error("Failed to fetch balance", e);
+        setBalance((prev) => (prev === null ? 0 : prev));
       }
     };
     fetchBalance();
@@ -65,6 +93,14 @@ export function Dashboard() {
     }).catch(() => {});
   }, []);
 
+  const balanceText = balance === null
+    ? '...'
+    : `${balance.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON`;
+
+  const economyBalanceText = balance === null
+    ? '...'
+    : `RON ${balance.toLocaleString('ro-RO', { minimumFractionDigits: 2 })}`;
+
   return (
     <div className="p-6 space-y-6">
       {/* Tabs row */}
@@ -83,13 +119,13 @@ export function Dashboard() {
             Cards
           </button>
           <button
-            disabled
-            className="px-5 py-2 rounded-xl font-semibold transition-all cursor-not-allowed opacity-40"
+            onClick={() => setActiveTab('economy')}
+            className="px-5 py-2 rounded-xl font-semibold transition-all"
             style={{
               fontSize: '14px',
-              background: 'white',
-              color: '#1B2B4B',
-              border: '1px solid #E2E8F0',
+              background: activeTab === 'economy' ? '#1B2B4B' : 'white',
+              color: activeTab === 'economy' ? 'white' : '#1B2B4B',
+              border: activeTab === 'economy' ? 'none' : '1px solid #E2E8F0',
             }}
           >
             Economy
@@ -166,7 +202,7 @@ export function Dashboard() {
           {/* Balance below card */}
           <div className="text-center space-y-2">
             <div className="font-bold text-[#1B2B4B]" style={{ fontSize: '32px' }}>
-              {balance.toLocaleString('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RON
+              {balanceText}
             </div>
             {Object.entries(otherBalances).length > 0 && (
               <div className="flex flex-wrap justify-center gap-3 mt-2">
@@ -234,7 +270,7 @@ export function Dashboard() {
               <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 80% 20%, rgba(255,209,0,0.15) 0%, transparent 60%)' }} />
               <div className="relative z-10">
                 <span className="text-white/60" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total Balance</span>
-                <div className="font-bold text-white mt-2" style={{ fontSize: '28px' }}>RON {balance.toLocaleString('ro-RO', { minimumFractionDigits: 2 })}</div>
+                <div className="font-bold text-white mt-2" style={{ fontSize: '28px' }}>{economyBalanceText}</div>
                 <div className="flex items-center gap-1.5 mt-2">
                   <TrendingUp size={13} className="text-green-400" />
                   <span className="text-green-400" style={{ fontSize: '12px', fontWeight: 600 }}>+8.3%</span>

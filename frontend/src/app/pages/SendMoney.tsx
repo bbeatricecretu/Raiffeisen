@@ -7,8 +7,8 @@ const CORRECT_CODE = '1234';
 export function SendMoney() {
     const [contacts, setContacts] = useState<{ name: string; iban: string; phone: string }[]>([]);
     const [accounts, setAccounts] = useState([
-        { label: 'Cont Curent (RON)', iban: 'RO49BBBR1831007593840099', balance: 0 },
-        { label: 'Cont Economii (RON)', iban: 'RO21BBBR1831007593840100', balance: 15420.50 },
+        { label: 'Current Account (RON)', iban: 'RO49BBBR1831007593840099', balance: 0 },
+        { label: 'Savings Account (RON)', iban: 'RO21BBBR1831007593840100', balance: 15420.50 },
     ]);
     const [step, setStep] = useState<'form' | 'overview' | 'code' | 'success'>('form');
     
@@ -18,10 +18,11 @@ export function SendMoney() {
         const fetchData = async () => {
             try {
                 const user = await api.getUser(uid);
-                if (user && typeof user.balance === 'number') {
+                if (user) {
                     setAccounts(prev => {
                         const newAccs = [...prev];
-                        newAccs[0].balance = user.balance;
+                        newAccs[0].balance = typeof user.balance === 'number' ? user.balance : 0;
+                        newAccs[1].balance = typeof user.balance_savings === 'number' ? user.balance_savings : newAccs[1].balance;
                         return newAccs;
                     });
                 }
@@ -71,17 +72,20 @@ export function SendMoney() {
             // Simulate processing delay
             await new Promise(r => setTimeout(r, 1500));
 
-            if (uid && selectedAccount === 0) {
+            if (uid) {
                  try {
                      await api.confirmTransaction({
                          user_id: uid,
                          merchant: merchantPayload, // Send resolved name or raw IBAN
                          amount: parsedAmount,
                          category: 'Transfer',
-                         city: 'Online'
+                         city: 'Online',
+                         source_account: selectedAccount === 0 ? 'current' : 'savings',
                      });
                  } catch (e) {
                      console.error("Transfer failed", e);
+                     setSending(false);
+                     return;
                  }
             }
             

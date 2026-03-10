@@ -7,13 +7,17 @@ import {
 } from 'lucide-react';
 import { currentUser as mockUser } from '../../services/mockData';
 import { api } from '../../services/api';
+import { useI18n } from '../../i18n';
 
 export function AppLayout() {
+  const { t, language } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(mockUser);
   const [pendingCount, setPendingCount] = useState(0);
+  const [now, setNow] = useState(new Date());
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const fetchPendingCount = async () => {
@@ -51,6 +55,20 @@ export function AppLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const formattedNow = new Intl.DateTimeFormat(language === 'ro' ? 'ro-RO' : 'en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(now);
+
   const navItems = {
     bank: [
       { to: '/app/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -72,14 +90,17 @@ export function AppLayout() {
 
   const getPageTitle = () => {
     const path = location.pathname;
-    if (path.includes('dashboard')) return 'Dashboard';
-    if (path.includes('chat')) return 'Smart Chat';
-    if (path.includes('map')) return 'Spending Map';
-    if (path.includes('confirm')) return 'Confirmations';
-    if (path.includes('invite')) return 'Invite Friends';
-    if (path.includes('join')) return 'Join Community';
-    if (path.includes('community')) return 'Community Feed';
-    return 'Connect & Grow';
+    if (path.includes('dashboard')) return t('layout.title.dashboard');
+    if (path.includes('chat')) return t('layout.title.chat');
+    if (path.includes('map')) return t('layout.title.map');
+    if (path.includes('confirm')) return t('layout.title.confirm');
+    if (path.includes('invite')) return t('layout.title.invite');
+    if (path.includes('join')) return t('layout.title.join');
+    if (path.includes('community')) return t('layout.title.community');
+    if (path.includes('notifications')) return t('layout.title.notifications');
+    if (path.includes('settings')) return t('layout.title.settings');
+    if (path.includes('analytics')) return t('layout.title.analytics');
+    return t('layout.title.default');
   };
 
   return (
@@ -215,7 +236,7 @@ export function AppLayout() {
         <header className="flex items-center justify-between px-6 h-16 bg-white border-b border-border shrink-0">
           <div>
             <h2 className="text-[#1B2B4B]" style={{ fontSize: '16px', fontWeight: 600 }}>{getPageTitle()}</h2>
-            <div className="text-muted-foreground" style={{ fontSize: '12px' }}>March 3, 2026</div>
+            <div className="text-muted-foreground" style={{ fontSize: '12px' }}>{formattedNow}</div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -225,18 +246,21 @@ export function AppLayout() {
                 onClick={() => navigate('/app/dashboard')}
                 className="px-3 py-1.5 rounded-md text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-white transition-all"
               >
-                Bank
+                {t('layout.quick.bank')}
               </button>
               <button
                 onClick={() => navigate('/app/community/c1')}
                 className="px-3 py-1.5 rounded-md text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-white transition-all"
               >
-                Community
+                {t('layout.quick.community')}
               </button>
             </div>
 
             {/* Notification bell */}
-            <button className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-muted transition-colors">
+            <button
+              onClick={() => navigate('/app/notifications')}
+              className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+            >
               <Bell size={17} className="text-muted-foreground" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#FFD100]" />
             </button>
@@ -260,19 +284,34 @@ export function AppLayout() {
                   </div>
                   <div className="p-1">
                     <button
-                      onClick={() => navigate('/app/details')}
+                      onClick={() => {
+                        navigate('/app/details');
+                        setProfileOpen(false);
+                      }}
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors"
                     >
                       <User size={15} className="text-muted-foreground" />
-                      My Profile
+                      {t('layout.profile')}
                     </button>
-                    <button className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors">
+                    <button
+                      onClick={() => {
+                        navigate('/app/settings');
+                        setProfileOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors"
+                    >
                       <Settings size={15} className="text-muted-foreground" />
-                      Settings
+                      {t('layout.settings')}
                     </button>
-                    <button className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors">
+                    <button
+                      onClick={() => {
+                        navigate('/app/analytics');
+                        setProfileOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-foreground hover:bg-muted rounded-lg transition-colors"
+                    >
                       <TrendingUp size={15} className="text-muted-foreground" />
-                      Analytics
+                      {t('layout.analytics')}
                     </button>
                     <div className="my-1 border-t border-border" />
                     <button
@@ -280,7 +319,7 @@ export function AppLayout() {
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     >
                       <LogOut size={15} />
-                      Sign Out
+                      {t('layout.signout')}
                     </button>
                   </div>
                 </div>

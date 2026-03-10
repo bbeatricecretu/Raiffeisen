@@ -3,33 +3,106 @@ import { ArrowLeft, MessageSquare, Search, Calendar, Bus, ShoppingCart, Utensils
 import { useNavigate } from 'react-router';
 import { transactions as mockTransactions } from '../services/mockData';
 import { api } from '../services/api';
+import { getHideSmallAmountsPreference, shouldHideAmount } from '../services/userPreferences';
 
-// Available colors for categories
-const CATEGORY_COLORS: Record<string, string> = {
-    'Groceries': '#FFD100',
-    'Shopping': '#1B2B4B',
-    'Fuel': '#2A3C5F',
-    'Subscriptions': '#94A3B8',
-    'Food': '#22C55E',
-    'Transport': '#000000',
-    'Health': '#22C55E',
-    'Utilities': '#94A3B8',
-    'Entertainment': '#F97316',
-    'Other': '#CBD5E1'
+type CanonicalCategory =
+    | 'groceries'
+    | 'food'
+    | 'fuel'
+    | 'shopping'
+    | 'subscriptions'
+    | 'transport'
+    | 'health'
+    | 'utilities'
+    | 'entertainment'
+    | 'education'
+    | 'service'
+    | 'exchange'
+    | 'transfer'
+    | 'other';
+
+const CATEGORY_ALIASES: Record<string, CanonicalCategory> = {
+    groceries: 'groceries',
+    alimente: 'groceries',
+    food: 'food',
+    mancare: 'food',
+    fuel: 'fuel',
+    combustibil: 'fuel',
+    shopping: 'shopping',
+    retail: 'shopping',
+    cumparaturi: 'shopping',
+    subscriptions: 'subscriptions',
+    abonamente: 'subscriptions',
+    transport: 'transport',
+    health: 'health',
+    sanatate: 'health',
+    utilities: 'utilities',
+    utilitati: 'utilities',
+    entertainment: 'entertainment',
+    divertisment: 'entertainment',
+    education: 'education',
+    service: 'service',
+    services: 'service',
+    exchange: 'exchange',
+    schimb: 'exchange',
+    transfer: 'transfer',
+    other: 'other',
+    altele: 'other',
 };
 
+const CATEGORY_LABELS: Record<CanonicalCategory, string> = {
+    groceries: 'Groceries',
+    food: 'Food',
+    fuel: 'Fuel',
+    shopping: 'Shopping',
+    subscriptions: 'Subscriptions',
+    transport: 'Transport',
+    health: 'Health',
+    utilities: 'Utilities',
+    entertainment: 'Entertainment',
+    education: 'Education',
+    service: 'Service',
+    exchange: 'Exchange',
+    transfer: 'Transfer',
+    other: 'Other',
+};
+
+// Available colors for categories
+const CATEGORY_COLORS: Record<CanonicalCategory, string> = {
+    groceries: '#FFD100',
+    shopping: '#1B2B4B',
+    fuel: '#2A3C5F',
+    subscriptions: '#94A3B8',
+    food: '#22C55E',
+    transport: '#000000',
+    health: '#22C55E',
+    utilities: '#94A3B8',
+    entertainment: '#F97316',
+    education: '#3B82F6',
+    service: '#64748B',
+    exchange: '#94A3B8',
+    transfer: '#94A3B8',
+    other: '#CBD5E1',
+};
+
+function normalizeCategory(value?: string): CanonicalCategory {
+    if (!value) return 'other';
+    return CATEGORY_ALIASES[value.trim().toLowerCase()] || 'other';
+}
+
 function categoryIcon(cat: string) {
+    const normalized = normalizeCategory(cat);
     const cls = 'text-[#1B2B4B]/60';
     const size = 20;
-    switch (cat) {
-        case 'Groceries': return <ShoppingCart size={size} className={cls} />;
-        case 'Food': return <Utensils size={size} className={cls} />;
-        case 'Transport': return <Bus size={size} className={cls} />;
-        case 'Subscriptions': return <Music size={size} className={cls} />;
-        case 'Fuel': return <Zap size={size} className={cls} />;
-        case 'Shopping': return <ShoppingCart size={size} className={cls} />;
-        case 'Health': return <Dumbbell size={size} className={cls} />;
-        case 'Utilities': return <CreditCard size={size} className={cls} />;
+    switch (normalized) {
+        case 'groceries': return <ShoppingCart size={size} className={cls} />;
+        case 'food': return <Utensils size={size} className={cls} />;
+        case 'transport': return <Bus size={size} className={cls} />;
+        case 'subscriptions': return <Music size={size} className={cls} />;
+        case 'fuel': return <Zap size={size} className={cls} />;
+        case 'shopping': return <ShoppingCart size={size} className={cls} />;
+        case 'health': return <Dumbbell size={size} className={cls} />;
+        case 'utilities': return <CreditCard size={size} className={cls} />;
         default: return <Banknote size={size} className={cls} />;
     }
 }
@@ -43,11 +116,12 @@ const aiInsights = [
 export function Transactions() {
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [selectedCategory, setSelectedCategory] = useState<string>('all');
     const [dateRange, setDateRange] = useState('This Month');
     const [customStartDate, setCustomStartDate] = useState('');
     const [customEndDate, setCustomEndDate] = useState('');
     const [transactionsList, setTransactionsList] = useState<any[]>(mockTransactions);
+    const [hideSmallAmounts, setHideSmallAmounts] = useState<boolean>(() => getHideSmallAmountsPreference());
 
     useEffect(() => {
         const loadTx = async () => {
@@ -76,10 +150,22 @@ export function Transactions() {
         loadTx();
     }, []);
 
+    useEffect(() => {
+        const syncPreference = () => setHideSmallAmounts(getHideSmallAmountsPreference());
+        window.addEventListener('settings-changed', syncPreference);
+        window.addEventListener('storage', syncPreference);
+        return () => {
+            window.removeEventListener('settings-changed', syncPreference);
+            window.removeEventListener('storage', syncPreference);
+        };
+    }, []);
+
     const allTransactions = useMemo(() => transactionsList.map(tx => ({
         id: tx.id,
         title: tx.merchant,
-        category: tx.category,
+        category: normalizeCategory(tx.category),
+        categoryLabel: CATEGORY_LABELS[normalizeCategory(tx.category)],
+        numericAmount: Number(tx.amount) || 0,
         desc: `${tx.iban || 'RO...'} · ${tx.county || 'B'}`,
         date: new Date(tx.date).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short', year: 'numeric' }),
         isoDate: tx.date,
@@ -91,7 +177,12 @@ export function Transactions() {
     const filteredTransactions = useMemo(() => {
         return allTransactions.filter(trx => {
             // Apply category filter
-            if (selectedCategory !== 'All' && trx.category !== selectedCategory) {
+            if (selectedCategory !== 'all' && trx.category !== selectedCategory) {
+                return false;
+            }
+
+            // Hide tiny amounts if user preference is enabled.
+            if (shouldHideAmount(trx.numericAmount, hideSmallAmounts)) {
                 return false;
             }
 
@@ -131,11 +222,26 @@ export function Transactions() {
 
             return true;
         });
-    }, [allTransactions, selectedCategory, searchQuery, dateRange, customStartDate, customEndDate]);
+    }, [allTransactions, selectedCategory, searchQuery, dateRange, customStartDate, customEndDate, hideSmallAmounts]);
 
     // Derive category breakdown from currently visible transactions
     const categories = useMemo(() => {
-        const sums: Record<string, number> = {};
+        const sums: Record<CanonicalCategory, number> = {
+            groceries: 0,
+            food: 0,
+            fuel: 0,
+            shopping: 0,
+            subscriptions: 0,
+            transport: 0,
+            health: 0,
+            utilities: 0,
+            entertainment: 0,
+            education: 0,
+            service: 0,
+            exchange: 0,
+            transfer: 0,
+            other: 0,
+        };
         let total = 0;
 
         filteredTransactions.forEach(trx => {
@@ -151,10 +257,12 @@ export function Transactions() {
         if (total === 0) return [];
 
         return Object.entries(sums)
+            .filter(([, amount]) => amount > 0)
             .map(([name, amount]) => ({
-                name,
+                name: name as CanonicalCategory,
+                label: CATEGORY_LABELS[name as CanonicalCategory],
                 amount: parseFloat(amount.toFixed(2)),
-                color: CATEGORY_COLORS[name] || CATEGORY_COLORS['Other'],
+                color: CATEGORY_COLORS[name as CanonicalCategory] || CATEGORY_COLORS.other,
                 percentage: Math.round((amount / total) * 100)
             }))
             .sort((a, b) => b.amount - a.amount);
@@ -215,8 +323,10 @@ export function Transactions() {
                                 className="px-4 py-3 bg-white border border-border rounded-xl font-semibold text-[#1B2B4B] hover:bg-black/5 transition-colors outline-none cursor-pointer flex-1"
                                 style={{ fontSize: '14px' }}
                             >
-                                <option value="All">All Categories</option>
-                                {Object.keys(CATEGORY_COLORS).map(c => <option key={c} value={c}>{c}</option>)}
+                                <option value="all">All Categories</option>
+                                {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                                    <option key={value} value={value}>{label}</option>
+                                ))}
                             </select>
 
                             {/* Date Filter */}
@@ -306,7 +416,7 @@ export function Transactions() {
                             {categories.length > 0 ? categories.map((cat) => (
                                 <div key={cat.name} className="space-y-2">
                                     <div className="flex items-center justify-between" style={{ fontSize: '14px' }}>
-                                        <span className="text-[#1B2B4B]">{cat.name}</span>
+                                        <span className="text-[#1B2B4B]">{cat.label}</span>
                                         <span className="font-bold text-[#1B2B4B]">RON {cat.amount}</span>
                                     </div>
                                     <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
