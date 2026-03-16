@@ -354,9 +354,22 @@ export function Admin() {
           <h1 className="text-2xl font-bold text-[#1B2B4B]">Admin Panel</h1>
           <p className="text-gray-500">Manage users, transactions, and contacts</p>
         </div>
-        <button onClick={handleCreateUser} className="flex items-center gap-2 bg-[#1B2B4B] text-white px-4 py-2.5 rounded-xl hover:opacity-90 transition-all font-semibold">
-          <Plus size={18} /> Add User
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleCreateUser} className="flex items-center gap-2 bg-[#1B2B4B] text-white px-4 py-2.5 rounded-xl hover:opacity-90 transition-all font-semibold">
+            <Plus size={18} /> Add User
+          </button>
+          <button
+            onClick={() => {
+              localStorage.removeItem('user');
+              localStorage.removeItem('userId');
+              window.location.href = '/auth';
+            }}
+            className="flex items-center gap-2 bg-red-500 text-white px-4 py-2.5 rounded-xl hover:opacity-90 transition-all font-semibold"
+            style={{ marginLeft: '8px' }}
+          >
+            <ShieldCheck size={18} /> Sign Out
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
