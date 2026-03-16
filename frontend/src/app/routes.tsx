@@ -36,10 +36,10 @@ export const router = createBrowserRouter([
     path: '/auth',
     element: <Auth />,
   },
-  {
-    path: '/admin',
-    element: <Admin />,
-  },
+  // {
+  //   path: '/admin',
+  //   element: <Admin />,
+  // },
   {
     path: '/app',
     element: <AppLayout />,
