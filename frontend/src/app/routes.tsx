@@ -38,7 +38,10 @@ export const router = createBrowserRouter([
     path: '/auth',
     element: <Auth />,
   },
-  ...(isLocal ? [{ path: '/admin', element: <Admin /> }] : []),
+  {
+    path: '/admin',
+    element: <Admin />,
+  },
   {
     path: '/app',
     element: <AppLayout />,

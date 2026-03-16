@@ -1,5 +1,6 @@
 // frontend/src/app/pages/Admin.tsx
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import { api } from '../services/api';
 import { Plus, Edit, Trash2, Search, X, ArrowLeft, CreditCard, Users as UsersIcon, Contact, ShieldCheck } from 'lucide-react';
 
@@ -53,6 +54,28 @@ export function Admin() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const navigate = useNavigate();
+  const [userRole, setUserRole] = useState<string>('');
+
+  useEffect(() => {
+    // Get userId from localStorage (or your auth system)
+    const userId = localStorage.getItem('userId');
+    if (!userId) {
+      navigate('/auth'); // Redirect to login if not logged in
+      return;
+    }
+    // Fetch user info and check role
+    api.getUser(userId)
+      .then(user => {
+        if (user.role !== 'admin') {
+          navigate('/'); // Redirect if not admin
+        } else {
+          setUserRole(user.role);
+        }
+      })
+      .catch(() => navigate('/auth'));
+  }, [navigate]);
+  // ...existing code...
 
   // User form
   const [editingUser, setEditingUser] = useState<User | null>(null);
