@@ -98,7 +98,11 @@ export function Auth() {
         });
         localStorage.setItem('user', JSON.stringify(user));
         localStorage.setItem('userId', user.id);
-        navigate('/app/dashboard');
+        if (user.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/app/dashboard');
+        }
       } catch (e) {
         console.error(e);
         setApiError('Invalid credentials');
