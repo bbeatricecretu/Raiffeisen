@@ -19,6 +19,8 @@ import { MerchantDetails } from './pages/MerchantDetails';
 import { Merchants } from './pages/Merchants';
 import { TransactionDetails } from './pages/TransactionDetails';
 import { Admin } from './pages/Admin';
+
+const isLocal = process.env.NODE_ENV === 'development';
 import { Notifications } from './pages/Notifications';
 import { SettingsPage } from './pages/SettingsPage';
 import { Analytics } from './pages/Analytics';
@@ -36,10 +38,7 @@ export const router = createBrowserRouter([
     path: '/auth',
     element: <Auth />,
   },
-  // {
-  //   path: '/admin',
-  //   element: <Admin />,
-  // },
+  ...(isLocal ? [{ path: '/admin', element: <Admin /> }] : []),
   {
     path: '/app',
     element: <AppLayout />,
