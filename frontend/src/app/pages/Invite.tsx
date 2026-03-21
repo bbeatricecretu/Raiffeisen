@@ -212,7 +212,9 @@ export function Invite() {
 
           {/* User cards grid */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {users.map(user => (
+            {users
+              .filter(user => user.role !== 'admin' && user.career !== 'Administrator' && user.email !== 'admin@example.com')
+              .map(user => (
               <div key={user.id} className="rounded-2xl border border-border p-4 hover:shadow-md transition-all group">
                 {/* Avatar + online indicator */}
                 <div className="flex items-start justify-between mb-3">
