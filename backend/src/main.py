@@ -187,6 +187,41 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Smart Mobile AI API", lifespan=lifespan)
 
+## --- Post Comments & Reactions ---
+
+# Return only text comments (not reactions)
+@app.get("/api/posts/{post_id}/comments")
+async def get_post_comments(post_id: str):
+    db = get_db()
+    return db.get_post_text_comments(post_id)
+
+# Return only emoji reactions (not text comments)
+@app.get("/api/posts/{post_id}/reactions")
+async def get_post_reactions(post_id: str):
+    db = get_db()
+    return db.get_post_reactions_detail(post_id)
+
+@app.post("/api/posts/{post_id}/comments")
+async def add_post_comment(post_id: str, req: CommentRequest):
+    db = get_db()
+    # Only allow comment if user is a team member
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if not db.is_team_member(req.user_id, post["team_id"]):
+        raise HTTPException(status_code=403, detail="Not a team member")
+    return db.create_comment(post_id, req.user_id, text=req.text)
+
+@app.post("/api/posts/{post_id}/react")
+async def react_to_post(post_id: str, req: ReactRequest):
+    db = get_db()
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if not db.is_team_member(req.user_id, post["team_id"]):
+        raise HTTPException(status_code=403, detail="Not a team member")
+    return db.toggle_reaction(post_id, req.user_id, req.emoji)
+
 # --- CORS ---
 app.add_middleware(
     CORSMiddleware,
@@ -305,8 +340,8 @@ async def check_contacts(req: ContactCheckRequest):
             })
         else:
             not_registered.append(phone)
-            
-    return {"registered": registered, "not_registered": not_registered}
+            # Return detailed per-user reactions for frontend display
+            return db.get_post_reactions_detail(post_id)
 
 # --- Bank AI ---
 
@@ -669,10 +704,24 @@ async def get_user_teams(user_id: str):
     db = get_db()
     return db.get_user_teams(user_id)
 
+
+@app.get("/api/teams")
+async def get_teams():
+    db = get_db()
+    return db.get_all_teams()
+
 @app.post("/api/teams")
 async def create_team(req: CreateTeamRequest):
     db = get_db()
-    return db.create_team(req.name, req.created_by, req.image_url, req.code)
+    return db.create_team(
+        req.name,
+        req.created_by,
+        req.image_url,
+        req.code,
+        getattr(req, 'category', None),
+        getattr(req, 'description', None),
+        getattr(req, 'career', None)
+    )
 
 @app.post("/api/teams/join")
 async def join_team(req: JoinTeamRequest):
@@ -687,10 +736,10 @@ async def get_team_posts(team_id: str, user_id: str):
     db = get_db()
     if not db.is_team_member(user_id, team_id):
         raise HTTPException(status_code=403, detail="Only community members can view this feed")
-    posts = db.get_team_posts(team_id)
+    posts = db.get_team_posts(team_id, user_id=user_id)
     # Enrich with counts
     for post in posts:
-        post['comments_count'] = len(db.get_post_comments(post['id']))
+        post['comments_count'] = len(db.get_post_text_comments(post['id']))
         post['reactions'] = db.get_post_reactions(post['id'])
     return posts
 
@@ -719,18 +768,10 @@ async def create_post(req: CreatePostRequest):
         image_url=req.image_url
     )
 
-@app.post("/api/posts/{post_id}/react")
-async def react_to_post(post_id: str, req: ReactRequest):
-    db = get_db()
-    post = db.get_post(post_id)
-    if not post:
-        raise HTTPException(status_code=404, detail="Post not found")
-    if not db.is_team_member(req.user_id, post["team_id"]):
-        raise HTTPException(status_code=403, detail="Only community members can react")
-    return db.create_comment(post_id, req.user_id, emoji=req.emoji)
 
-@app.post("/api/posts/{post_id}/comment")
-async def comment_on_post(post_id: str, req: CommentRequest):
+# --- Corrected Comments & Reactions Endpoints ---
+@app.post("/api/posts/{post_id}/comments")
+async def add_post_comment_v2(post_id: str, req: CommentRequest):
     db = get_db()
     post = db.get_post(post_id)
     if not post:
@@ -738,6 +779,16 @@ async def comment_on_post(post_id: str, req: CommentRequest):
     if not db.is_team_member(req.user_id, post["team_id"]):
         raise HTTPException(status_code=403, detail="Only community members can comment")
     return db.create_comment(post_id, req.user_id, text=req.text)
+
+@app.post("/api/posts/{post_id}/react")
+async def react_to_post_v2(post_id: str, req: ReactRequest):
+    db = get_db()
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if not db.is_team_member(req.user_id, post["team_id"]):
+        raise HTTPException(status_code=403, detail="Only community members can react")
+    return db.toggle_reaction(post_id, req.user_id, req.emoji)
 
 @app.post("/api/connections/invites")
 async def create_connection_invite(req: ConnectionInviteRequest):

@@ -1,13 +1,95 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { Heart, MessageCircle, Share2, Plus, X, Image, Send, Users, Globe, Shield, ChevronDown, MoreHorizontal, Bookmark, Copy, Check } from 'lucide-react';
-import { communities, currentUser, type FeedPost } from '../services/mockData';
+import { currentUser, type FeedPost } from '../services/mockData';
 import { api } from '../services/api';
 
-function PostCard({ post, onLike, onComment }: { post: FeedPost; onLike: (id: string, currentlyLiked: boolean) => void; onComment: (id: string, text: string) => void }) {
+function deriveCategoryFromName(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('tech') || n.includes('software') || n.includes('engineer') || n.includes('founder')) return 'Technology';
+  if (n.includes('invest') || n.includes('finance') || n.includes('investor') || n.includes('banking')) return 'Finance';
+  if (n.includes('startup') || n.includes('hub') || n.includes('ecosystem') || n.includes('cluj')) return 'Startup';
+  if (n.includes('bank')) return 'Banking';
+  if (n.includes('payment') || n.includes('fintech') || n.includes('digital')) return 'Fintech';
+  return 'Technology';
+}
+
+function PostCard({
+  post,
+  onLike,
+  onComment,
+  currentUser,
+  userId,
+}: {
+  post: FeedPost;
+  onLike: (id: string, currentlyLiked: boolean) => Promise<void>;
+  onComment: (id: string, text: string) => Promise<void>;
+  currentUser: any;
+  userId: string;
+}) {
   const [showComments, setShowComments] = useState(false);
   const [comment, setComment] = useState('');
   const [commentsList, setCommentsList] = useState<any[]>([]); // Should fetch comments
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [reactionsList, setReactionsList] = useState<any[]>([]);
+  const [reactionsLoading, setReactionsLoading] = useState(false);
+
+  const refreshComments = useCallback(async () => {
+    if (!showComments) return;
+    setCommentsLoading(true);
+    try {
+      const res = await api.getPostComments(post.id, userId);
+      setCommentsList(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, [showComments, post.id, userId]);
+
+  const refreshReactions = useCallback(async () => {
+    if (!showComments) return;
+    setReactionsLoading(true);
+    try {
+      const res = await api.getPostReactions(post.id, userId);
+      setReactionsList(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setReactionsLoading(false);
+    }
+  }, [showComments, post.id, userId]);
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    const shareText = `${post.title}\n\n${post.content}`.trim();
+
+    try {
+      const nav: any = navigator;
+      if (nav?.share) {
+        await nav.share({ title: post.title, text: shareText, url });
+        return;
+      }
+    } catch {
+      // fall through to clipboard/WhatsApp
+    }
+
+    const fullText = `${shareText}\n\n${url}`;
+    try {
+      await navigator.clipboard.writeText(fullText);
+    } catch {
+      // ignore clipboard failures
+    }
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(fullText)}`;
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  useEffect(() => {
+    if (showComments) {
+      void refreshComments();
+      void refreshReactions();
+    }
+  }, [showComments, refreshComments, refreshReactions]);
 
   return (
     <div className="bg-white rounded-2xl border border-border overflow-hidden">
@@ -70,7 +152,7 @@ function PostCard({ post, onLike, onComment }: { post: FeedPost; onLike: (id: st
         {[
           { icon: Heart, label: 'Like', active: post.isLiked, onClick: () => onLike(post.id, post.isLiked) },
           { icon: MessageCircle, label: 'Comment', active: showComments, onClick: () => setShowComments(!showComments) },
-          { icon: Share2, label: 'Share', active: false, onClick: () => { } },
+          { icon: Share2, label: 'Share', active: false, onClick: () => { void handleShare(); } },
         ].map((action, i) => (
           <button
             key={i}
@@ -87,33 +169,93 @@ function PostCard({ post, onLike, onComment }: { post: FeedPost; onLike: (id: st
       {/* Comments section */}
       {showComments && (
         <div className="border-t border-border px-5 py-4 bg-muted/30">
-          <div className="flex items-center gap-3">
-            <img src={currentUser.avatar} alt={currentUser.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
-            <div className="flex-1 flex items-center gap-2 bg-white rounded-xl border border-border px-3 py-2">
-              <input
-                value={comment}
-                onChange={e => setComment(e.target.value)}
-                placeholder="Write a comment..."
-                className="flex-1 text-[12px] outline-none bg-transparent text-[#1B2B4B] placeholder:text-muted-foreground"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && comment.trim()) {
-                    onComment(post.id, comment);
-                    setComment('');
-                  }
-                }}
-              />
-              <button
-                onClick={() => {
-                  if (comment.trim()) {
-                    onComment(post.id, comment);
-                    setComment('');
-                  }
-                }}
-                className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
-                style={{ background: comment ? '#FFD100' : '#F0F4FF' }}
-              >
-                <Send size={11} className={comment ? 'text-[#1B2B4B]' : 'text-muted-foreground'} />
-              </button>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <img src={currentUser.avatar} alt={currentUser.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+              <div className="flex-1 flex items-center gap-2 bg-white rounded-xl border border-border px-3 py-2">
+                <input
+                  value={comment}
+                  onChange={e => setComment(e.target.value)}
+                  placeholder="Write a comment..."
+                  className="flex-1 text-[12px] outline-none bg-transparent text-[#1B2B4B] placeholder:text-muted-foreground"
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter' && comment.trim()) {
+                      e.preventDefault();
+                      await onComment(post.id, comment);
+                      setComment('');
+                      await refreshComments();
+                    }
+                  }}
+                />
+                <button
+                  onClick={async () => {
+                    if (comment.trim()) {
+                      await onComment(post.id, comment);
+                      setComment('');
+                      await refreshComments();
+                    }
+                  }}
+                  className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ background: comment ? '#FFD100' : '#F0F4FF' }}
+                >
+                  <Send size={11} className={comment ? 'text-[#1B2B4B]' : 'text-muted-foreground'} />
+                </button>
+              </div>
+            </div>
+
+            {true && (
+              <div className="pt-3 border-t border-border/60">
+                <div className="text-[12px] font-semibold text-[#1B2B4B] mb-2">
+                  Reactions
+                </div>
+                {reactionsLoading ? (
+                  <div className="text-[12px] text-muted-foreground">Loading reactions...</div>
+                ) : reactionsList.length === 0 ? (
+                  <div className="text-[12px] text-muted-foreground">No reactions yet.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {reactionsList.map((r: any, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[12px]" style={{ background: '#FFD100' }}>
+                          {r.emoji || '❤️'}
+                        </div>
+                        <div className="text-[12px] text-muted-foreground leading-snug">
+                          <span className="text-[#1B2B4B] font-semibold">{r.author_name || 'Unknown'}</span>
+                          {post.author && post.author.id === userId
+                            ? ' reacted to your post'
+                            : ' reacted to this post'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              {commentsLoading ? (
+                <div className="text-[12px] text-muted-foreground">Loading comments...</div>
+              ) : commentsList.length === 0 ? (
+                <div className="text-[12px] text-muted-foreground">No comments yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {commentsList.map((c: any) => (
+                    <div key={c.id} className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-[#1B2B4B]">
+                        {String(c.author_name || '?').slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-[12px] font-semibold text-[#1B2B4B]">
+                          {c.author_name || 'Unknown'}
+                        </div>
+                        <div className="text-[12px] text-muted-foreground leading-snug">
+                          {c.text}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -125,7 +267,15 @@ function PostCard({ post, onLike, onComment }: { post: FeedPost; onLike: (id: st
 export function CommunityFeed() {
   const { id: teamIdFromRoute } = useParams();
   const navigate = useNavigate();
-  const [currentCommunity, setCurrentCommunity] = useState<any>(communities[0]);
+  const [currentCommunity, setCurrentCommunity] = useState<any>({
+    id: '',
+    name: '',
+    description: '',
+    members: 0,
+    category: '',
+    cover: '',
+    teamCode: '',
+  });
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [newPost, setNewPost] = useState({ title: '', content: '' });
@@ -133,6 +283,7 @@ export function CommunityFeed() {
   const [currentUserData, setCurrentUserData] = useState(currentUser);
   const [activeTeamId, setActiveTeamId] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState(false);
+  const realUserId = localStorage.getItem('userId') || currentUserData.id;
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -147,33 +298,44 @@ export function CommunityFeed() {
   // Fetch user's teams + posts from first team
   useEffect(() => {
     async function loadData() {
-      const realId = localStorage.getItem('userId') || currentUserData.id;
-      
+      const realId = realUserId;
+
       try {
         const userTeams = await api.getUserTeams(realId);
         if (userTeams && userTeams.length > 0) {
           const selectedTeam = userTeams.find((t: any) => t.id === teamIdFromRoute) || userTeams[0];
           setActiveTeamId(selectedTeam.id);
-          // Map backend team to frontend structure if needed, or use as is
-          // We'll stick to a simple mapping
-          const matchedMock = communities.find((c) => c.name === selectedTeam.name) || communities[0];
+          // Remember last opened team so /app/community can redirect correctly.
+          localStorage.setItem('lastCommunityTeamId', selectedTeam.id);
           const communityData = {
-            ...matchedMock,
             id: selectedTeam.id,
             name: selectedTeam.name,
-            teamCode: selectedTeam.code
+            teamCode: selectedTeam.code,
+            cover: selectedTeam.image_url || '',
+            description: '',
+            members: 0,
+            category: selectedTeam.category || deriveCategoryFromName(selectedTeam.name),
           };
           setCurrentCommunity(communityData);
+
+          try {
+            const membersRes = await api.getTeamMembersCount(selectedTeam.id, realId);
+            setCurrentCommunity(prev => ({
+              ...prev,
+              members: Number(membersRes?.members_count || 0),
+            }));
+          } catch (e) {
+            console.error(e);
+          }
           
           const teamPosts = await api.getTeamPosts(selectedTeam.id, realId);
           // Transform backend posts to FeedPost
           const mappedPosts: FeedPost[] = teamPosts.map((p: any) => ({
             id: p.id,
             author: {
-              ...currentUser,
-              id: p.user_id,
+              id: p.user_id, // always the post creator's ID
               name: p.author_name || 'Unknown',
-              avatar: currentUser.avatar,
+              avatar: p.author_avatar || currentUser.avatar,
             },
             title: p.title || 'Untitled',
             content: p.text || '',
@@ -184,7 +346,7 @@ export function CommunityFeed() {
             comments: Number(p.comments_count || 0),
             shares: 0,
             time: new Date(p.created_at).toLocaleDateString(),
-            isLiked: false
+            isLiked: Boolean(p.is_liked)
           }));
           setPosts(mappedPosts);
         } else {
@@ -201,14 +363,38 @@ export function CommunityFeed() {
     loadData();
   }, [teamIdFromRoute, currentUserData.id]);
 
-  const handleLike = async (id: string, currentlyLiked: boolean) => {
-    // Optimistic update
-    setPosts(prev => prev.map(p => p.id === id ? { ...p, isLiked: !p.isLiked, likes: p.isLiked ? p.likes - 1 : p.likes + 1 } : p));
+  const reloadPosts = async () => {
+    if (!activeTeamId) return;
     try {
-      if (!currentlyLiked) {
-        await api.reactToPost(id, localStorage.getItem('userId') || currentUserData.id, '❤️');
-      }
-      // If unliking, current API doesn't support 'delete reaction' easily without ID, so just ignore for demo
+      const teamPosts = await api.getTeamPosts(activeTeamId, realUserId);
+      const mappedPosts: FeedPost[] = teamPosts.map((p: any) => ({
+        id: p.id,
+            author: {
+              id: p.user_id, // post creator's ID from backend
+              name: p.author_name || 'Unknown',
+              avatar: p.author_avatar || currentUser.avatar,
+            },
+        title: p.title || 'Untitled',
+        content: p.text || '',
+        image: p.image_url,
+        likes: Array.isArray(p.reactions)
+          ? p.reactions.reduce((sum: number, r: any) => sum + Number(r.count || 0), 0)
+          : 0,
+        comments: Number(p.comments_count || 0),
+        shares: 0,
+        time: new Date(p.created_at).toLocaleDateString(),
+        isLiked: Boolean(p.is_liked),
+      }));
+      setPosts(mappedPosts);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleLike = async (id: string, currentlyLiked: boolean) => {
+    try {
+      await api.reactToPost(id, realUserId, '❤️');
+      await reloadPosts();
     } catch (e) {
       console.error(e);
     }
@@ -216,9 +402,8 @@ export function CommunityFeed() {
 
   const handleComment = async (id: string, text: string) => {
     try {
-      await api.commentOnPost(id, localStorage.getItem('userId') || currentUserData.id, text);
-      // Increment comment count locally
-      setPosts(prev => prev.map(p => p.id === id ? { ...p, comments: p.comments + 1 } : p));
+      await api.commentOnPost(id, realUserId, text);
+      await reloadPosts();
     } catch (e) {
       console.error(e);
     }
@@ -227,26 +412,15 @@ export function CommunityFeed() {
   const handleCreatePost = async () => {
     if (!newPost.title.trim() || !newPost.content.trim() || !activeTeamId) return;
     try {
-      const created = await api.createPost({
+      await api.createPost({
         team_id: activeTeamId,
-        user_id: localStorage.getItem('userId') || currentUserData.id,
+        user_id: realUserId,
         title: newPost.title,
         text: newPost.content
       });
-      
-      const newFeedPost: FeedPost = {
-        id: created.id,
-        author: currentUserData,
-        title: created.title,
-        content: created.text,
-        likes: 0, comments: 0, shares: 0,
-        time: 'Just now',
-        isLiked: false,
-      };
-      
-      setPosts(prev => [newFeedPost, ...prev]);
       setNewPost({ title: '', content: '' });
       setShowCreatePost(false);
+      await reloadPosts();
     } catch (e) {
       console.error(e);
     }
@@ -357,7 +531,14 @@ export function CommunityFeed() {
           </div>
           
           {posts.map(post => (
-            <PostCard key={post.id} post={post} onLike={handleLike} onComment={handleComment} />
+            <PostCard
+              key={post.id}
+              post={post}
+              onLike={handleLike}
+              onComment={handleComment}
+              currentUser={currentUserData}
+              userId={realUserId}
+            />
           ))}
 
           {posts.length === 0 && (

@@ -68,7 +68,10 @@ CREATE TABLE IF NOT EXISTS teams (
     name        TEXT NOT NULL,
     code        TEXT NOT NULL UNIQUE,
     image_url   TEXT,
+    description TEXT DEFAULT '',
+    career      TEXT DEFAULT '',
     created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
+    category    TEXT DEFAULT 'Technology',
     created_at  TEXT DEFAULT (datetime('now'))
 );
 

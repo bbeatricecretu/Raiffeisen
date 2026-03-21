@@ -1,15 +1,24 @@
-import { useState } from 'react';
-import { useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Users, CheckCircle2, Hash, ChevronRight, Briefcase, Building2, AlertCircle, Copy, Check } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { communities, currentUser } from '../services/mockData';
+import { currentUser, type Community } from '../services/mockData';
 import { api } from '../services/api';
 
 const categories = ['All', 'Technology', 'Finance', 'Startup', 'Banking', 'Fintech'];
 
+function deriveCategoryFromName(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('tech') || n.includes('software') || n.includes('engineer') || n.includes('founder')) return 'Technology';
+  if (n.includes('invest') || n.includes('finance') || n.includes('investor') || n.includes('banking')) return 'Finance';
+  if (n.includes('startup') || n.includes('hub') || n.includes('ecosystem')) return 'Startup';
+  if (n.includes('bank')) return 'Banking';
+  if (n.includes('payment') || n.includes('fintech') || n.includes('digital')) return 'Fintech';
+  return 'Technology';
+}
+
 export function JoinCommunity() {
   const navigate = useNavigate();
-  const [teamMap, setTeamMap] = useState<Record<string, string>>({});
+  const [communities, setCommunities] = useState<Community[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCareer, setSearchCareer] = useState('');
   const [teamCode, setTeamCode] = useState('');
@@ -19,53 +28,83 @@ export function JoinCommunity() {
   const [isLoading, setIsLoading] = useState(false);
   const [copiedCommunityId, setCopiedCommunityId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [showCreate, setShowCreate] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createForm, setCreateForm] = useState({ name: '', code: '', cover: '', category: 'Technology', description: '', career: '' });
+
+  const reloadTeams = useCallback(async () => {
     const realUserId = localStorage.getItem('userId') || currentUser.id;
-    const localMapRaw = localStorage.getItem(`community-team-map:${realUserId}`);
-    const localMap = localMapRaw ? (JSON.parse(localMapRaw) as Record<string, string>) : {};
-    setTeamMap(localMap);
+    const [allTeams, userTeams] = await Promise.all([api.getTeams(), api.getUserTeams(realUserId)]);
 
-    const knownJoined = new Set<string>(Object.keys(localMap));
-    setJoinedIds(knownJoined);
+    const joined = new Set<string>(Array.isArray(userTeams) ? userTeams.map((t: any) => t.id) : []);
+    setJoinedIds(joined);
 
-    api.getUserTeams(realUserId)
-      .then((teams) => {
-        if (!Array.isArray(teams)) return;
-        const mergedMap = { ...localMap };
-        communities.forEach((c) => {
-          const found = teams.find((t: any) => t.name === c.name);
-          if (found) {
-            mergedMap[c.id] = found.id;
-            knownJoined.add(c.id);
-          }
-        });
-        setTeamMap(mergedMap);
-        setJoinedIds(new Set(knownJoined));
-        localStorage.setItem(`community-team-map:${realUserId}`, JSON.stringify(mergedMap));
-      })
-      .catch(() => {});
+    const mapped: Community[] = (Array.isArray(allTeams) ? allTeams : []).map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description || '',
+      members: Number(t.members_count || 0),
+      category: t.category || 'Technology',
+      cover: t.image_url || '',
+      isJoined: joined.has(t.id),
+      teamCode: t.code,
+      career: t.career || '',
+    }));
+    setCommunities(mapped);
   }, []);
+
+  useEffect(() => {
+    void reloadTeams().catch((e) => console.error(e));
+  }, [reloadTeams]);
+
+  const handleCreateCommunity = async () => {
+    const realUserId = localStorage.getItem('userId') || currentUser.id;
+    const name = createForm.name.trim();
+    const cover = createForm.cover.trim();
+    const code = createForm.code.trim().toUpperCase();
+    const category = createForm.category;
+    if (!name) return;
+
+    setCreateLoading(true);
+    try {
+      const created = await api.createTeam(
+        name,
+        realUserId,
+        cover || undefined,
+        code || undefined,
+        category,
+        createForm.description,
+        createForm.career
+      );
+
+      // Ensure UI redirects to the one we just created.
+      localStorage.setItem('lastCommunityTeamId', created.id);
+      await reloadTeams();
+      setShowCreate(false);
+      navigate(`/app/community/${created.id}`);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCreateLoading(false);
+    }
+  };
 
   const filtered = communities.filter(c => {
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCareer = !searchCareer.trim() || (c.career && c.career.toLowerCase().includes(searchCareer.toLowerCase()));
     const matchesCategory = activeCategory === 'All' || c.category === activeCategory;
-    return matchesSearch && matchesCategory;
+    return matchesSearch && matchesCareer && matchesCategory;
   });
 
   const handleJoin = async (id: string, code?: string) => {
     const realUserId = localStorage.getItem('userId') || currentUser.id;
-    const existingTeamId = teamMap[id];
-    if (existingTeamId) {
-      setJoinedIds(prev => new Set([...prev, id]));
-      navigate(`/app/community/${existingTeamId}`);
-      return;
-    }
 
     const community = communities.find((c) => c.id === id);
     if (!community) return;
 
     try {
       let joinedTeamId = '';
+      // Always join by the canonical community teamCode so everyone ends up in the same team.
       const sharedCode = (code || community.teamCode || '').toUpperCase();
 
       if (sharedCode) {
@@ -82,10 +121,7 @@ export function JoinCommunity() {
         joinedTeamId = created.id;
       }
 
-      const nextMap = { ...teamMap, [id]: joinedTeamId };
-      setTeamMap(nextMap);
-      setJoinedIds(prev => new Set([...prev, id]));
-      localStorage.setItem(`community-team-map:${realUserId}`, JSON.stringify(nextMap));
+      setJoinedIds(prev => new Set([...prev, joinedTeamId]));
       navigate(`/app/community/${joinedTeamId}`);
     } catch (e) {
       console.error(e);
@@ -102,14 +138,7 @@ export function JoinCommunity() {
       const realUserId = localStorage.getItem('userId') || currentUser.id;
       const joined = await api.joinTeam(realUserId, teamCode.toUpperCase());
       setCodeStatus('success');
-      // If successful, maybe find the community by code in our mock list to update UI
-      const found = communities.find(c => c.teamCode === teamCode.toUpperCase());
-      if (found) {
-         const nextMap = { ...teamMap, [found.id]: joined.id };
-         setTeamMap(nextMap);
-         setJoinedIds(prev => new Set([...prev, found.id]));
-         localStorage.setItem(`community-team-map:${realUserId}`, JSON.stringify(nextMap));
-      }
+      setJoinedIds(prev => new Set([...prev, joined.id]));
       navigate(`/app/community/${joined.id}`);
     } catch (e) {
       console.error(e);
@@ -133,6 +162,21 @@ export function JoinCommunity() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Create community */}
+      <div className="bg-white rounded-2xl border border-border p-4 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[#1B2B4B] font-semibold" style={{ fontSize: '14px' }}>Create a new community</div>
+          <div className="text-muted-foreground" style={{ fontSize: '12px' }}>Anyone can create one; invite via team code.</div>
+        </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="px-4 py-2.5 rounded-xl font-semibold text-[#1B2B4B] hover:brightness-105 transition-all"
+          style={{ background: '#FFD100' }}
+        >
+          Create
+        </button>
+      </div>
+
       {/* Search + Team Code row */}
       <div className="grid md:grid-cols-3 gap-4">
         {/* Search by name */}
@@ -214,6 +258,106 @@ export function JoinCommunity() {
         </div>
       </div>
 
+      {/* Create modal */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h3 className="font-semibold text-[#1B2B4B]">New Community</h3>
+              <button
+                onClick={() => setShowCreate(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block mb-1.5 text-[#1B2B4B]" style={{ fontSize: '13px' }}>Community name</label>
+                <input
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="e.g. Data Science Cluj"
+                  className="w-full pl-3 pr-3 py-2.5 rounded-xl border border-border text-[13px] bg-white focus:outline-none focus:border-[#FFD100] focus:ring-2 focus:ring-[#FFD100]/20 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block mb-1.5 text-[#1B2B4B]" style={{ fontSize: '13px' }}>Description</label>
+                <input
+                  value={createForm.description}
+                  onChange={e => setCreateForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="Describe your community..."
+                  className="w-full pl-3 pr-3 py-2.5 rounded-xl border border-border text-[13px] bg-white focus:outline-none focus:border-[#FFD100] focus:ring-2 focus:ring-[#FFD100]/20 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block mb-1.5 text-[#1B2B4B]" style={{ fontSize: '13px' }}>Career (optional)</label>
+                <input
+                  value={createForm.career}
+                  onChange={e => setCreateForm(p => ({ ...p, career: e.target.value }))}
+                  placeholder="e.g. Engineer, Analyst..."
+                  className="w-full pl-3 pr-3 py-2.5 rounded-xl border border-border text-[13px] bg-white focus:outline-none focus:border-[#FFD100] focus:ring-2 focus:ring-[#FFD100]/20 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block mb-1.5 text-[#1B2B4B]" style={{ fontSize: '13px' }}>Category</label>
+                <select
+                  value={createForm.category}
+                  onChange={e => setCreateForm(p => ({ ...p, category: e.target.value }))}
+                  className="w-full pl-3 pr-3 py-2.5 rounded-xl border border-border text-[13px] bg-white focus:outline-none focus:border-[#FFD100] focus:ring-2 focus:ring-[#FFD100]/20 transition-all"
+                >
+                  <option value="Technology">Technology</option>
+                  <option value="Finance">Finance</option>
+                  <option value="Startup">Startup</option>
+                  <option value="Banking">Banking</option>
+                  <option value="Fintech">Fintech</option>
+                </select>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1.5 text-[#1B2B4B]" style={{ fontSize: '13px' }}>Team code (optional)</label>
+                  <input
+                    value={createForm.code}
+                    onChange={(e) => setCreateForm((p) => ({ ...p, code: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. DSCLUJ"
+                    className="w-full pl-3 pr-3 py-2.5 rounded-xl border text-[13px] font-mono bg-white focus:outline-none focus:border-[#FFD100] focus:ring-2 focus:ring-[#FFD100]/20 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1.5 text-[#1B2B4B]" style={{ fontSize: '13px' }}>Cover image URL (optional)</label>
+                  <input
+                    value={createForm.cover}
+                    onChange={(e) => setCreateForm((p) => ({ ...p, cover: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full pl-3 pr-3 py-2.5 rounded-xl border text-[13px] bg-white focus:outline-none focus:border-[#FFD100] focus:ring-2 focus:ring-[#FFD100]/20 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowCreate(false)}
+                  className="px-4 py-2.5 rounded-xl font-semibold text-[#1B2B4B] border border-border hover:bg-muted transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleCreateCommunity()}
+                  disabled={createLoading || !createForm.name.trim()}
+                  className="px-5 py-2.5 rounded-xl font-semibold text-[#1B2B4B] hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  style={{ background: '#FFD100' }}
+                >
+                  {createLoading ? 'Creating...' : 'Create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Category filter */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         {categories.map(cat => (
@@ -263,9 +407,11 @@ export function JoinCommunity() {
                 {/* Content */}
                 <div className="p-4">
                   <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#1B2B4B' }} className="mb-1.5">{community.name}</h4>
-                  <p className="text-muted-foreground mb-3" style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                    {community.description.slice(0, 90)}...
-                  </p>
+                    <p className="text-muted-foreground mb-3" style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                      {community.description && community.description.trim() !== ''
+                        ? community.description.slice(0, 90) + (community.description.length > 90 ? '...' : '')
+                        : 'No description provided'}
+                    </p>
 
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
@@ -277,7 +423,7 @@ export function JoinCommunity() {
                     <div className="flex items-center gap-2">
                       {isJoined ? (
                         <button
-                          onClick={() => navigate(`/app/community/${teamMap[community.id]}`)}
+                          onClick={() => handleJoin(community.id, community.teamCode)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white transition-all hover:brightness-95"
                           style={{ background: '#1B2B4B' }}
                         >

@@ -183,11 +183,27 @@ export const api = {
     return res.json();
   },
 
-  createTeam: async (name: string, userId: string, imageUrl?: string, code?: string) => {
+  createTeam: async (
+    name: string,
+    userId: string,
+    imageUrl?: string,
+    code?: string,
+    category?: string,
+    description?: string,
+    career?: string
+  ) => {
     const res = await fetch(`${API_BASE_URL}/teams`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, created_by: userId, image_url: imageUrl, code }),
+      body: JSON.stringify({
+        name,
+        created_by: userId,
+        image_url: imageUrl,
+        code,
+        category,
+        description,
+        career
+      }),
     });
     return res.json();
   },
@@ -214,6 +230,18 @@ export const api = {
     return res.json();
   },
 
+  getTeams: async () => {
+    const res = await fetch(`${API_BASE_URL}/teams`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getTeamMembersCount: async (teamId: string, userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/teams/${teamId}/members/count?user_id=${userId}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
   getSuggestedConnections: async (userId: string, limit: number = 24) => {
     const res = await fetch(`${API_BASE_URL}/users/${userId}/suggested-connections?limit=${limit}`);
     if (!res.ok) throw new Error(await res.text());
@@ -229,6 +257,16 @@ export const api = {
     return res.json();
   },
 
+
+  commentOnPost: async (postId: string, userId: string, text: string) => {
+    const res = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, text }),
+    });
+    return res.json();
+  },
+
   reactToPost: async (postId: string, userId: string, emoji: string) => {
     const res = await fetch(`${API_BASE_URL}/posts/${postId}/react`, {
       method: 'POST',
@@ -238,12 +276,15 @@ export const api = {
     return res.json();
   },
 
-  commentOnPost: async (postId: string, userId: string, text: string) => {
-    const res = await fetch(`${API_BASE_URL}/posts/${postId}/comment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, text }),
-    });
+  getPostComments: async (postId: string, userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/posts/${postId}/comments?user_id=${userId}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  getPostReactions: async (postId: string, userId: string) => {
+    const res = await fetch(`${API_BASE_URL}/posts/${postId}/reactions?user_id=${userId}`);
+    if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
 

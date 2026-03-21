@@ -29,6 +29,14 @@ def _new_id() -> str:
 
 
 class DatabaseClient:
+    def delete_team_by_code(self, code: str) -> None:
+        """Delete a team and all its members by team code."""
+        with self._get_connection() as conn:
+            team = conn.execute("SELECT id FROM teams WHERE code = ?", (code,)).fetchone()
+            if team:
+                team_id = team["id"]
+                conn.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
+                conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
 
     def __init__(self, db_path: Optional[str] = None) -> None:
         self.db_path = Path(db_path) if db_path else _DEFAULT_DB
@@ -448,8 +456,14 @@ class DatabaseClient:
     # TEAMS
 
     def create_team(self, name: str, created_by: str,
-                    image_url: str = "", code: Optional[str] = None) -> Dict[str, Any]:
+                    image_url: str = "", code: Optional[str] = None, category: str = "Technology",
+                    description: str = "", career: str = "") -> Dict[str, Any]:
         normalized_code = (code or "").strip().upper()
+
+        # Check if user exists
+        if not self.get_user(created_by):
+            logger.error(f"User with id {created_by} does not exist.")
+            return {"error": "User does not exist"}
 
         if normalized_code:
             existing = self.get_team_by_code(normalized_code)
@@ -459,20 +473,25 @@ class DatabaseClient:
                         "INSERT OR IGNORE INTO team_members (user_id, team_id, role) VALUES (?, ?, 'member')",
                         (created_by, existing["id"]),
                     )
-                return existing
+                logger.warning(f"Team with code {normalized_code} already exists. Returning existing team.")
+                return {"error": "Team code already exists", "team": existing}
 
         team_id = _new_id()
         invite_code = normalized_code if normalized_code else team_id[:8].upper()
-        with self._get_connection() as conn:
-            conn.execute(
-                "INSERT INTO teams (id, name, code, image_url, created_by) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (team_id, name, invite_code, image_url or None, created_by),
-            )
-            conn.execute(
-                "INSERT INTO team_members (user_id, team_id, role) VALUES (?, ?, 'admin')",
-                (created_by, team_id),
-            )
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO teams (id, name, code, image_url, description, career, created_by, category) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (team_id, name, invite_code, image_url or None, description or '', career or '', created_by, category),
+                )
+                conn.execute(
+                    "INSERT INTO team_members (user_id, team_id, role) VALUES (?, ?, 'admin')",
+                    (created_by, team_id),
+                )
+        except Exception as e:
+            logger.error(f"Failed to create team: {e}")
+            return {"error": f"Failed to create team: {e}"}
         return self.get_team(team_id)
 
     def get_team(self, team_id: str) -> Optional[Dict[str, Any]]:
@@ -498,6 +517,32 @@ class DatabaseClient:
                 (user_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_all_teams(self) -> List[Dict[str, Any]]:
+        """Returns all teams with a computed members_count, removing duplicates by code."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT t.*, (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id) AS members_count "
+                "FROM teams t "
+                "ORDER BY t.created_at DESC",
+            ).fetchall()
+        # Remove duplicates by code (keep the first occurrence)
+        seen_codes = set()
+        unique_teams = []
+        for r in rows:
+            code = r["code"]
+            if code not in seen_codes:
+                seen_codes.add(code)
+                unique_teams.append(dict(r))
+        return unique_teams
+
+    def get_team_member_count(self, team_id: str) -> int:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as count FROM team_members WHERE team_id = ?",
+                (team_id,),
+            ).fetchone()
+        return int(row["count"]) if row else 0
 
     def join_team(self, user_id: str, code: str) -> Optional[Dict[str, Any]]:
         """Join a team by invite code. Returns the team or None if code is invalid."""
@@ -559,8 +604,7 @@ class DatabaseClient:
             ).fetchone()
         return dict(row) if row else None
 
-    def get_team_posts(self, team_id: str,
-                       limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    def get_team_posts(self, team_id: str, user_id: Optional[str] = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             rows = conn.execute(
                 "SELECT p.*, u.name as author_name FROM posts p "
@@ -568,7 +612,18 @@ class DatabaseClient:
                 "WHERE p.team_id = ? ORDER BY p.created_at DESC LIMIT ? OFFSET ?",
                 (team_id, limit, offset),
             ).fetchall()
-        return [dict(r) for r in rows]
+            posts = []
+            for r in rows:
+                post = dict(r)
+                if user_id:
+                    # Check if this user has reacted to this post with any emoji
+                    liked = conn.execute(
+                        "SELECT 1 FROM comments WHERE post_id = ? AND user_id = ? AND emoji IS NOT NULL LIMIT 1",
+                        (post['id'], user_id)
+                    ).fetchone()
+                    post['is_liked'] = bool(liked)
+                posts.append(post)
+        return posts
 
     def delete_post(self, post_id: str) -> None:
         with self._get_connection() as conn:
@@ -622,6 +677,72 @@ class DatabaseClient:
                 (post_id,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_post_reactions_detail(self, post_id: str) -> List[Dict[str, Any]]:
+        """Returns per-user emoji reactions (not grouped)."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT c.emoji, c.user_id, u.name as author_name, c.created_at "
+                "FROM comments c "
+                "JOIN users u ON u.id = c.user_id "
+                "WHERE c.post_id = ? AND c.emoji IS NOT NULL "
+                "ORDER BY c.created_at ASC",
+                (post_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_post_text_comment_count(self, post_id: str) -> int:
+        """Returns only text comments count (excludes emoji reactions)."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as count FROM comments "
+                "WHERE post_id = ? AND text IS NOT NULL AND text != ''",
+                (post_id,),
+            ).fetchone()
+        return int(row["count"]) if row else 0
+
+    def get_post_text_comments(self, post_id: str) -> List[Dict[str, Any]]:
+        """Returns only text comments for a post, ordered oldest first."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT c.id, c.post_id, c.user_id, c.text, c.created_at, "
+                "       u.name as author_name "
+                "FROM comments c "
+                "JOIN users u ON c.user_id = u.id "
+                "WHERE c.post_id = ? AND c.text IS NOT NULL AND c.text != '' "
+                "ORDER BY c.created_at ASC",
+                (post_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_user_reaction_comment_id(self, post_id: str, user_id: str, emoji: str) -> Optional[str]:
+        """Returns the comment id if the user reacted with the given emoji."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM comments "
+                "WHERE post_id = ? AND user_id = ? AND emoji = ? "
+                "LIMIT 1",
+                (post_id, user_id, emoji),
+            ).fetchone()
+        return str(row["id"]) if row else None
+
+    def toggle_reaction(self, post_id: str, user_id: str, emoji: str) -> Dict[str, Any]:
+        """Toggles a reaction: inserts if missing, deletes if already present."""
+        if not emoji:
+            raise ValueError("emoji must be provided")
+
+        existing_id = self.get_user_reaction_comment_id(post_id, user_id, emoji)
+        if existing_id:
+            self.delete_comment(existing_id)
+            reacted = False
+        else:
+            self.create_comment(post_id, user_id, emoji=emoji)
+            reacted = True
+
+        return {
+            "reacted": reacted,
+            "reactions": self.get_post_reactions(post_id),
+        }
 
     def delete_comment(self, comment_id: str) -> None:
         with self._get_connection() as conn:
